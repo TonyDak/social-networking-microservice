@@ -1,11 +1,12 @@
 package com.example.authservice.controller;
 
+import com.example.authservice.dto.ForgotPasswordRequestDTO;
+import com.example.authservice.dto.TokenResponseDTO;
 import com.example.authservice.dto.LoginRequestDTO;
 import com.example.authservice.dto.RegisterRequestDTO;
 import com.example.authservice.service.AuthService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,14 +18,29 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/register")
-    public ResponseEntity<?> register(@RequestBody RegisterRequestDTO registerRequest) {
-        authService.registerUser(registerRequest);
-        return new ResponseEntity<>(HttpStatus.OK);
+    public ResponseEntity<?> register(@RequestBody @Valid RegisterRequestDTO registerRequest) {
+        return authService.registerUser(registerRequest);
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequestDTO loginRequest) {
-        return ResponseEntity.ok(authService.loginUser(loginRequest));
+    public ResponseEntity<?> login(@RequestBody @Valid LoginRequestDTO loginRequest) {
+        return authService.loginUser(loginRequest);
     }
 
+    //forgot password send email
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(@RequestBody ForgotPasswordRequestDTO email) {
+        return authService.forgotPassword(email);
+    }
+
+    //logout
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(@RequestParam String refreshToken) {
+        return authService.logoutUser(refreshToken);
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<?> refresh(@RequestParam String refreshToken) {
+        return authService.refreshToken(refreshToken);
+    }
 }

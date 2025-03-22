@@ -1,6 +1,5 @@
 server:
   port: 8081
-
 spring:
   application:
     name: api-gateway
@@ -8,19 +7,40 @@ spring:
     web-application-type: reactive
   cloud:
     gateway:
+      globalcors:
+        corsConfigurations:
+          '[/**]':
+            allowedOrigins:
+              - http://localhost:3000
+              - http://localhost:4200
+              # Add other origins as needed
+            allowedMethods: [ GET, POST, PUT, DELETE, OPTIONS ]
+            allowedHeaders: "*"
+            allowCredentials: true
+            maxAge: 3600
       routes:
         - id: auth-service
-          uri: lb://auth-service
+#          uri: lb://auth-service
+          uri: http://localhost:8082
           predicates:
             - Path=/api/auth/**
           filters:
-            - StripPrefix=1
-#        - id: user-service
+            - RewritePath=/api/auth/(?<segment>.*), /$\{segment}
+
+        - id: user-service
 #          uri: lb://user-service
-#          predicates:
-#            - Path=/api/users/**
-#          filters:
-#            - RewritePath=/api/users/(?<segment>.*), /${segment}
+          uri: http://localhost:8083
+          predicates:
+            - Path=/api/users/**
+          filters:
+            - RewritePath=/api/users/(?<segment>.*), /$\{segment}
+
+        - id: chat-service
+          uri: http://localhost:8084
+          predicates:
+            - Path=/api/chat/**
+          filters:
+            - RewritePath=/api/chat/(?<segment>.*), /$\{segment}
 eureka:
   client:
     serviceUrl:

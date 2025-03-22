@@ -4,11 +4,12 @@ import com.example.userservice.dto.LoginEventDTO;
 import com.example.userservice.dto.UserEventDTO;
 import com.example.userservice.dto.UserInfoDTO;
 import com.example.userservice.dto.UserUpdateDTO;
-import com.example.userservice.entity.User;
+import com.example.userservice.model.User;
 import com.example.userservice.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,7 @@ import java.util.Date;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final KafkaTemplate<String, UserEventDTO> userUpdateDTOKafkaTemplate;
 
     @KafkaListener(topics = "${kafka.topic.user-creation}", groupId = "user-service", containerFactory = "userEventkafkaListenerContainerFactory")
     public void consumeUserCreationEvent(UserEventDTO userEvent) {
@@ -91,6 +93,16 @@ public class UserService {
         user.setProfilePicture(userUpdateDTO.getImage());
 
         userRepository.save(user);
+
+        //send update user on keycloak
+        UserEventDTO userEventDTO = new UserEventDTO(
+                user.getKeycloakId(),
+                user.getEmail(),
+                user.getFirstName(),
+                user.getLastName(),
+                user.getUsername()
+        );
+        userUpdateDTOKafkaTemplate.send("user-update-topic", user.getKeycloakId() ,userEventDTO);
         return userUpdateDTO;
     }
 }

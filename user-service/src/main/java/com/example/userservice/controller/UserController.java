@@ -2,13 +2,12 @@ package com.example.userservice.controller;
 
 
 import com.example.userservice.dto.UserInfoDTO;
+import com.example.userservice.dto.UserUpdateDTO;
 import com.example.userservice.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/users")
@@ -17,7 +16,13 @@ public class UserController {
     private final UserService userService;
 
     @GetMapping("/me")
-    public ResponseEntity<UserInfoDTO> getCurrentUser(Authentication authentication) {
+    public ResponseEntity<?> getCurrentUser(Authentication authentication) {
         return ResponseEntity.ok(userService.getUserInfo(authentication));
+    }
+
+    //update user
+    @PutMapping("/me/update")
+    public ResponseEntity<?> updateUser(Authentication authentication, @RequestBody UserUpdateDTO userUpdateDTO) {
+        return ResponseEntity.ok(userService.updateUser(userUpdateDTO, authentication));
     }
 }

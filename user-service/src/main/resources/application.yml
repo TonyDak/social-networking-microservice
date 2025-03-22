@@ -1,6 +1,5 @@
 server:
   port: 8083
-
 spring:
   application:
     name: user-service
@@ -32,6 +31,9 @@ kafka:
   topic:
     user-creation: user-creation-topic
     user-login: user-login-topic
+    user-update: user-update-topic
+    user-deletion: user-deletion-topic
+
 keycloak:
   realm: social-network
   ssl-required: external
