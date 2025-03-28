@@ -1,0 +1,51 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: notification-service
+
+  cloud:
+    config:
+      uri: http://localhost:8888
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: notification-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: com.example.notificationservice.dto
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${keycloak.auth-server-url}/realms/${keycloak.realm}
+          jwk-set-uri: ${keycloak.auth-server-url}/realms/${keycloak.realm}/protocol/openid-connect/certs
+keycloak:
+  realm: social-network
+  ssl-required: external
+  resource: auth-service
+  credentials:
+    secret: ${KEYCLOAK_CLIENT_SECRET}
+  use-resource-role-mappings: true
+  admin:
+    username: ${ADMIN_USERNAME}
+    password: ${ADMIN_PASSWORD}
+    clientId: admin-cli
+  cors: true
+  principal-attribute: preferred_username
+  auth-server-url: http://localhost:8080
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/

@@ -1,0 +1,61 @@
+spring:
+  application:
+    name: friend-service
+  cloud:
+    config:
+      uri: http://localhost:8888
+
+  datasource:
+    url: jdbc:mysql://localhost:3308/friend_db
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${keycloak.auth-server-url}/realms/${keycloak.realm}
+          jwk-set-uri: ${keycloak.auth-server-url}/realms/${keycloak.realm}/protocol/openid-connect/certs
+  data:
+    redis:
+      host: redis
+      port: 6379
+      timeout: 2000
+
+  kafka:
+    bootstrap-servers: kafka:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+server:
+  port: 8086  # Khác port v?i notification-service
+
+kafka:
+  topic:
+    friend-request: friend-request-topic
+    friend-accepted: friend-accepted-topic
+keycloak:
+  realm: social-network
+  ssl-required: external
+  resource: auth-service
+  credentials:
+    secret: ${KEYCLOAK_CLIENT_SECRET}
+  use-resource-role-mappings: true
+  admin:
+    username: ${ADMIN_USERNAME}
+    password: ${ADMIN_PASSWORD}
+    clientId: admin-cli
+  cors: true
+  principal-attribute: preferred_username
+  auth-server-url: http://localhost:8080
+# Thêm c?u hình Eureka Client
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
