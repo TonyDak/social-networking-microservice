@@ -43,4 +43,12 @@ public class AuthController {
     public ResponseEntity<?> refresh(@RequestParam String refreshToken) {
         return authService.refreshToken(refreshToken);
     }
+    @GetMapping("/google-redirect")
+    public ResponseEntity<?> getGoogleToken(@RequestParam("code") String code) {
+        return authService.processGoogleLogin(code);
+    }
+    @GetMapping("/google-login-url")
+    public ResponseEntity<?> getGoogleLoginUrl() {
+        return authService.getGoogleAuthUrl();
+    }
 }

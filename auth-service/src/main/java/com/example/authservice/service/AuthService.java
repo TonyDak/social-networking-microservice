@@ -1,12 +1,12 @@
 package com.example.authservice.service;
 
 
-import ch.qos.logback.classic.spi.IThrowableProxy;
 import com.example.authservice.dto.*;
 import jakarta.ws.rs.core.Response;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -18,6 +18,11 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @RequiredArgsConstructor
@@ -27,6 +32,12 @@ public class AuthService {
     private final WebClient.Builder webClientBuilder;
     private final KafkaTemplate<String, UserEventDTO> CreateKafkaTemplate;
     private final KafkaTemplate<String, LoginEventDTO> LoginKafkaTemplate;
+    private final Cache<String, Long> recentLogins = Caffeine.newBuilder()
+            .expireAfterWrite(30, TimeUnit.MINUTES)
+            .maximumSize(10000)
+            .build();
+    private final long LOGIN_CACHE_DURATION = 30*60*1000; // 30 minutes
+
 
     @Value("${keycloak.auth-server-url}")
     private String authServerUrl;
@@ -45,6 +56,9 @@ public class AuthService {
 
     @Value("${kafka.topic.user-login}")
     private String userLoginTopic;
+
+    @Value("${spring.security.oauth2.redirect-uri}")
+    private String redirectUri;
 
     public ResponseEntity<?> registerUser(RegisterRequestDTO request) {
         Response response = keycloakService.createUser(request);
@@ -203,5 +217,126 @@ public class AuthService {
             log.error("Lỗi không xác định khi làm mới token: {}", ex.getMessage(), ex);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Lỗi hệ thống khi làm mới token");
         }
+    }
+
+    public ResponseEntity<?> processGoogleLogin(String code) {
+        if (code == null || code.isEmpty()) {
+            return ResponseEntity.badRequest().body("Mã code không hợp lệ");
+        }
+
+        MultiValueMap<String, String> map = new LinkedMultiValueMap<>();
+        map.add("client_id", clientId);
+        map.add("client_secret", clientSecret);
+        map.add("grant_type", "authorization_code");
+        map.add("code", code);
+        map.add("redirect_uri", redirectUri); // URL ứng dụng của bạn
+
+        String tokenUrl = authServerUrl + "/realms/" + realm + "/protocol/openid-connect/token";
+
+        try {
+            TokenResponseDTO tokenResponseDTO = webClientBuilder.build()
+                    .post()
+                    .uri(tokenUrl)
+                    .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+                    .bodyValue(map)
+                    .retrieve()
+                    .bodyToMono(TokenResponseDTO.class)
+                    .block();
+
+            if (tokenResponseDTO != null) {
+                String keycloakId = extractSubjectFromToken(tokenResponseDTO.getAccessToken());
+                Map<String, Object> userInfo = getUserInfoFromToken(tokenResponseDTO.getAccessToken());
+
+                cacheFirstTimeLoginAttempt(keycloakId, (String) userInfo.get("email"));
+                synchronizeNewUserData(keycloakId, userInfo);
+
+                // Ghi nhận sự kiện đăng nhập qua Kafka
+                LoginEventDTO loginEvent = LoginEventDTO.builder()
+                        .keycloakId(keycloakId)
+                        .timestamp(System.currentTimeMillis())
+                        .authProvider("google")
+                        .build();
+
+                LoginKafkaTemplate.send(userLoginTopic, keycloakId, loginEvent);
+
+                return ResponseEntity.ok(tokenResponseDTO);
+            }
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Không nhận được token xác thực");
+        } catch (Exception ex) {
+            log.error("Lỗi đăng nhập Google: {}", ex.getMessage(), ex);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Lỗi xử lý đăng nhập Google");
+        }
+    }
+    // Phương thức để kiểm tra thông tin người dùng từ token
+    private Map<String, Object> getUserInfoFromToken(String accessToken) {
+        String userInfoUrl = authServerUrl + "/realms/" + realm + "/protocol/openid-connect/userinfo";
+
+        return webClientBuilder.build()
+                .get()
+                .uri(userInfoUrl)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                .retrieve()
+                .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {})
+                .block();
+    }
+
+    public ResponseEntity<?> getGoogleAuthUrl() {
+        String authUrl = authServerUrl +
+                "/realms/" + realm +
+                "/protocol/openid-connect/auth" +
+                "?client_id=" + clientId +
+                "&redirect_uri=" + redirectUri + // Your frontend callback URL
+                "&response_type=code" +
+                "&scope=openid email profile" +
+                "&kc_idp_hint=google"; // This is the important parameter for Keycloak to use Google
+
+        return ResponseEntity.ok(new GoogleAuthUrlDTO(authUrl));
+    }
+    private void synchronizeNewUserData(String keycloakId, Map<String, Object> userInfo) {
+        String email = (String) userInfo.get("email");
+
+        // Tạo event với đầy đủ thông tin
+        UserEventDTO userEvent = UserEventDTO.builder()
+                .keycloakId(keycloakId)
+                .email(email)
+                .firstName((String) userInfo.getOrDefault("given_name", ""))
+                .lastName((String) userInfo.getOrDefault("family_name", ""))
+                .username(email)
+                .provider("google") // Thêm thông tin provider
+                .build();
+
+        // Kiểm tra đã đăng nhập gần đây chỉ để ghi log
+        boolean recentLogin = isRecentLogin(keycloakId, email);
+        log.info("Đồng bộ user - KeycloakID: {}, Email: {}, ĐăngNhậpGầnĐây: {}",
+                keycloakId, email, recentLogin);
+
+        // Luôn gửi sự kiện với cơ chế retry
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                CreateKafkaTemplate.send(userCreationTopic, email, userEvent).get(5, java.util.concurrent.TimeUnit.SECONDS);
+                log.info("Đã gửi sự kiện đồng bộ user thành công: {}", keycloakId);
+                // Cập nhật cache sau khi thành công
+                cacheFirstTimeLoginAttempt(keycloakId, email);
+                return;
+            } catch (Exception e) {
+                log.warn("Lần thử {} - Lỗi gửi sự kiện đồng bộ user: {}", attempt+1, e.getMessage());
+                try { Thread.sleep(500); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+            }
+        }
+        log.error("Không thể gửi sự kiện đồng bộ user sau 3 lần thử: {}", keycloakId);
+    }
+
+
+    private void cacheFirstTimeLoginAttempt(String keycloakId, String email) {
+        String cacheKey = keycloakId + ":" + email;
+        recentLogins.put(cacheKey, System.currentTimeMillis());
+    }
+
+    private boolean isRecentLogin(String keycloakId, String email) {
+        String cacheKey = keycloakId + ":" + email;
+        Long lastLogin = recentLogins.getIfPresent(cacheKey);
+        long currentTime = System.currentTimeMillis();
+
+        return lastLogin != null && currentTime - lastLogin <= LOGIN_CACHE_DURATION;
     }
 }

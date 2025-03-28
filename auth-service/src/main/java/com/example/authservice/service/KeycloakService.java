@@ -199,7 +199,6 @@ public class KeycloakService {
             keycloak = getKeycloakInstance();
             UsersResource usersResource = keycloak.realm(realm).users();
             List<UserRepresentation> users = usersResource.list();
-            boolean userFound = false;
 
             for (UserRepresentation user : users) {
                 if (user.getUsername().equals(userEvent.getUsername())) {
@@ -209,12 +208,6 @@ public class KeycloakService {
                     usersResource.get(user.getId()).update(user);
                     return Response.ok().entity("Cập nhật thông tin người dùng thành công").build();
                 }
-            }
-
-            if (!userFound) {
-                return Response.status(Response.Status.NOT_FOUND)
-                        .entity("Không tìm thấy người dùng: " + userEvent.getEmail())
-                        .build();
             }
 
             return Response.ok().build();

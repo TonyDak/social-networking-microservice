@@ -3,6 +3,9 @@ server:
 spring:
   application:
     name: auth-service
+  cloud:
+    config:
+      uri: http://localhost:8888
   main:
     allow-bean-definition-overriding: true
   security:
@@ -10,6 +13,7 @@ spring:
       resourceserver:
         jwt:
           issuer-uri: ${keycloak.auth-server-url}/realms/${keycloak.realm}
+      redirect-uri: http://localhost:8082/api/auth/google-redirect
   kafka:
     bootstrap-servers: localhost:9092
     producer:
@@ -36,6 +40,11 @@ keycloak:
   cors: true
   principal-attribute: preferred_username
   auth-server-url: http://localhost:8080
+  providers:
+    google:
+      clientId: ${GOOGLE_CLIENT_ID}
+      clientSecret: ${GOOGLE_CLIENT_SECRET}
+      defaultScope: openid email profile
 
 logging:
   level:

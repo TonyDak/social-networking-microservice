@@ -3,9 +3,12 @@ server:
 spring:
   application:
     name: api-gateway
+
   main:
     web-application-type: reactive
   cloud:
+    config:
+      uri: http://localhost:8888
     gateway:
       globalcors:
         corsConfigurations:
@@ -41,6 +44,13 @@ spring:
             - Path=/api/chat/**
           filters:
             - RewritePath=/api/chat/(?<segment>.*), /$\{segment}
+
+        - id: notification-service
+          uri: http://localhost:8085
+          predicates:
+              - Path=/api/notifications/**
+          filters:
+              - RewritePath=/api/notifications/(?<segment>.*), /$\{segment}
 eureka:
   client:
     serviceUrl:

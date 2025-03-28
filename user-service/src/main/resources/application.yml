@@ -3,6 +3,9 @@ server:
 spring:
   application:
     name: user-service
+  cloud:
+      config:
+        uri: http://localhost:8888
   security:
     oauth2:
       resourceserver:
