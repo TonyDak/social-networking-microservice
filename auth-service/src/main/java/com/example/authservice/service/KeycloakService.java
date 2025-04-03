@@ -66,20 +66,13 @@ public class KeycloakService {
             credential.setType(CredentialRepresentation.PASSWORD);
             credential.setValue(request.getPassword());
             credential.setTemporary(false);
-            //check if user already exists
-            if (getUsers().stream().anyMatch(user -> user.getUsername().equals(request.getUsername()))) {
-                return Response.status(Response.Status.CONFLICT)
-                        .entity("Người dùng đã tồn tại")
-                        .build();
-            }
-            //email
+
             if (getUsers().stream().anyMatch(user -> user.getEmail().equals(request.getEmail()))) {
                 return Response.status(Response.Status.CONFLICT)
                         .entity("Email đã tồn tại")
                         .build();
             }
             UserRepresentation user = new UserRepresentation();
-            user.setUsername(request.getUsername());
             user.setEmail(request.getEmail());
             user.setFirstName(request.getFirstName());
             user.setLastName(request.getLastName());
@@ -91,7 +84,7 @@ public class KeycloakService {
             Response response = usersResource.create(user);
             return response;
         } catch (Exception e) {
-            log.error("Không thể tạo người dùng {}: {}", request.getUsername(), e.getMessage());
+            log.error("Không thể tạo người dùng {}: {}", request.getEmail(), e.getMessage());
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity("Không thể tạo tài khoản: " + e.getMessage())
                     .build();
@@ -201,7 +194,7 @@ public class KeycloakService {
             List<UserRepresentation> users = usersResource.list();
 
             for (UserRepresentation user : users) {
-                if (user.getUsername().equals(userEvent.getUsername())) {
+                if (user.getUsername().equals(userEvent.getEmail())) {
                     user.setEmail(userEvent.getEmail());
                     user.setFirstName(userEvent.getFirstName());
                     user.setLastName(userEvent.getLastName());
@@ -216,6 +209,29 @@ public class KeycloakService {
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity("Không thể cập nhật người dùng: " + e.getMessage())
                     .build();
+        } finally {
+            if (keycloak != null) {
+                keycloak.close();
+            }
+        }
+    }
+    //Email Already exist
+    public boolean isEmailExist(String email) {
+        Keycloak keycloak = null;
+        try {
+            keycloak = getKeycloakInstance();
+            UsersResource usersResource = keycloak.realm(realm).users();
+            List<UserRepresentation> users = usersResource.list();
+
+            for (UserRepresentation user : users) {
+                if (user.getEmail().equals(email)) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (Exception e) {
+            log.error("Không thể kiểm tra email {}: {}", email, e.getMessage());
+            throw new KeycloakException("Không thể kiểm tra email: " + e.getMessage(), e);
         } finally {
             if (keycloak != null) {
                 keycloak.close();

@@ -35,15 +35,10 @@ public class UserService {
                 return;
             }
 
-            if (userRepository.existsByUsername(userEvent.getUsername())) {
-                log.warn("User với username {} đã tồn tại", userEvent.getUsername());
-                return;
-            }
 
             // Tạo và lưu user mới
             User newUser = User.builder()
                     .keycloakId(userEvent.getKeycloakId())
-                    .username(userEvent.getUsername())
                     .email(userEvent.getEmail())
                     .firstName(userEvent.getFirstName())
                     .lastName(userEvent.getLastName())
@@ -76,7 +71,6 @@ public class UserService {
                 .email(user.getEmail())
                 .firstName(user.getFirstName())
                 .lastName(user.getLastName())
-                .username(user.getUsername())
                 .bio(user.getBio())
                 .image(user.getProfilePicture())
                 .build();
@@ -99,8 +93,7 @@ public class UserService {
                 user.getKeycloakId(),
                 user.getEmail(),
                 user.getFirstName(),
-                user.getLastName(),
-                user.getUsername()
+                user.getLastName()
         );
         userUpdateDTOKafkaTemplate.send("user-update-topic", user.getKeycloakId() ,userEventDTO);
         return userUpdateDTO;

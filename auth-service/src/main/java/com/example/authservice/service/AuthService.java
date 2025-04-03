@@ -70,7 +70,6 @@ public class AuthService {
                     .email(request.getEmail())
                     .firstName(request.getFirstName())
                     .lastName(request.getLastName())
-                    .username(request.getUsername())
                     .build();
             //send kafka message
             CreateKafkaTemplate.send(userCreationTopic, request.getEmail(), userEvent);
@@ -87,7 +86,13 @@ public class AuthService {
         return location != null ? location.substring(location.lastIndexOf('/') + 1) : null;
     }
 
+
     public ResponseEntity<?> loginUser(LoginRequestDTO request) {
+        //check email already exists
+        if (!keycloakService.isEmailExist(request.getEmail())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Email chưa được đăng ký");
+        }
+
         MultiValueMap<String, String> map = new LinkedMultiValueMap<>();
         map.add("client_id", clientId);
         map.add("client_secret", clientSecret);
@@ -117,12 +122,10 @@ public class AuthService {
                 LoginKafkaTemplate.send(userLoginTopic, keycloakId, loginEvent);
                 return ResponseEntity.ok(tokenResponseDTO);
             }
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Không nhận được token xác thực");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Lỗi hệ thống: Xảy ra lỗi khi xử lý yêu cầu đăng nhập");
         } catch (WebClientResponseException ex) {
-            log.error("Đăng nhập thất bại: {}", ex.getMessage());
-
             if (ex.getStatusCode().is4xxClientError()) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Email hoặc mật khẩu không chính xác");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Mật khẩu không chính xác");
             } else {
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Lỗi hệ thống: Xảy ra lỗi khi xử lý yêu cầu đăng nhập");
             }
@@ -301,7 +304,6 @@ public class AuthService {
                 .email(email)
                 .firstName((String) userInfo.getOrDefault("given_name", ""))
                 .lastName((String) userInfo.getOrDefault("family_name", ""))
-                .username(email)
                 .provider("google") // Thêm thông tin provider
                 .build();
 

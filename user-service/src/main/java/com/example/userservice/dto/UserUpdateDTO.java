@@ -15,7 +15,6 @@ import java.util.Date;
 public class UserUpdateDTO {
     private String firstName;
     private String lastName;
-    private String username;
     private String bio;
     private String image;
     

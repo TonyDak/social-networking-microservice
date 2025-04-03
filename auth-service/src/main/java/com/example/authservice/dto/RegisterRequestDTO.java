@@ -14,7 +14,6 @@ import lombok.Value;
 @Value
 @AllArgsConstructor
 public class RegisterRequestDTO {
-    private String username;
 
     @Email(message = "Email should be valid")
     private String email;
@@ -25,4 +24,5 @@ public class RegisterRequestDTO {
 
     private String firstName;
     private String lastName;
+
 }

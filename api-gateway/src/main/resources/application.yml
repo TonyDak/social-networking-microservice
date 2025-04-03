@@ -3,7 +3,11 @@ server:
 spring:
   application:
     name: api-gateway
-
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8080/realms/social-network
   main:
     web-application-type: reactive
   cloud:
@@ -15,7 +19,6 @@ spring:
           '[/**]':
             allowedOrigins:
               - http://localhost:3000
-              - http://localhost:4200
               # Add other origins as needed
             allowedMethods: [ GET, POST, PUT, DELETE, OPTIONS ]
             allowedHeaders: "*"
@@ -23,7 +26,6 @@ spring:
             maxAge: 3600
       routes:
         - id: auth-service
-#          uri: lb://auth-service
           uri: http://localhost:8082
           predicates:
             - Path=/api/auth/**
@@ -31,7 +33,6 @@ spring:
             - RewritePath=/api/auth/(?<segment>.*), /$\{segment}
 
         - id: user-service
-#          uri: lb://user-service
           uri: http://localhost:8083
           predicates:
             - Path=/api/users/**
@@ -51,6 +52,13 @@ spring:
               - Path=/api/notifications/**
           filters:
               - RewritePath=/api/notifications/(?<segment>.*), /$\{segment}
+
+        - id: friend-service
+          uri: http://localhost:8086
+          predicates:
+              - Path=/api/friends/**
+          filters:
+              - RewritePath=/api/friends/(?<segment>.*), /$\{segment}
 eureka:
   client:
     serviceUrl:
