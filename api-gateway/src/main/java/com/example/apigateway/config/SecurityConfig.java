@@ -39,7 +39,7 @@ public class SecurityConfig {
                 .authorizeExchange(exchanges -> exchanges
                         .pathMatchers("/api/auth/register", "/api/auth/login",
                                 "/api/auth/forgot-password", "/api/auth/google-login-url",
-                                "/api/auth/google-redirect").permitAll()
+                                "/api/auth/google-redirect", "/api/auth/refresh**", "/api/auth/logout-user**").permitAll()
                         .anyExchange().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2
