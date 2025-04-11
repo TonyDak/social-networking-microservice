@@ -35,7 +35,8 @@ kafka:
     user-creation: user-creation-topic
     user-login: user-login-topic
     user-update: user-update-topic
-    user-deletion: user-deletion-topic
+    email-verification-request: email-verification-request-topic
+    email-verification-response: email-verification-response-topic
 
 keycloak:
   realm: social-network
@@ -55,3 +56,6 @@ eureka:
   client:
     serviceUrl:
       defaultZone: http://localhost:8761/eureka/
+  instance:
+    hostname: localhost
+    preferIpAddress: true
