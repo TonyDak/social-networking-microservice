@@ -8,8 +8,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.KeycloakBuilder;
+import org.keycloak.admin.client.resource.UserResource;
 import org.keycloak.admin.client.resource.UsersResource;
 import org.keycloak.representations.idm.CredentialRepresentation;
+import org.keycloak.representations.idm.FederatedIdentityRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -110,7 +112,7 @@ public class KeycloakService {
         }
     }
 
-    public Response updatePassword(ForgotPasswordRequestDTO request) {
+    public Response SendResetPassword(ForgotPasswordRequestDTO request) {
         if (request.getEmail() == null || request.getEmail().isEmpty()) {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("Email không được để trống")
@@ -217,21 +219,106 @@ public class KeycloakService {
     }
     //Email Already exist
     public boolean isEmailExist(String email) {
+        if (email == null || email.isBlank()) {
+            return false;
+        }
+
         Keycloak keycloak = null;
         try {
             keycloak = getKeycloakInstance();
             UsersResource usersResource = keycloak.realm(realm).users();
-            List<UserRepresentation> users = usersResource.list();
 
-            for (UserRepresentation user : users) {
-                if (user.getEmail().equals(email)) {
-                    return true;
-                }
-            }
-            return false;
+            // Use Keycloak's search functionality - much more efficient
+            List<UserRepresentation> users = usersResource.search(null, null, null, email, 0, 10);
+
+            // Case-insensitive checking and null safety
+            return users.stream()
+                    .anyMatch(user -> email.equalsIgnoreCase(user.getEmail()));
+
         } catch (Exception e) {
             log.error("Không thể kiểm tra email {}: {}", email, e.getMessage());
             throw new KeycloakException("Không thể kiểm tra email: " + e.getMessage(), e);
+        } finally {
+            if (keycloak != null) {
+                keycloak.close();
+            }
+        }
+    }
+
+    public boolean linkGoogleIdentity(String userId, String accessToken, String email) {
+        Keycloak keycloak = null;
+        try {
+            keycloak = getKeycloakInstance();
+            UserResource userResource = keycloak.realm(realm).users().get(userId);
+
+            List<FederatedIdentityRepresentation> existingIdentities =
+                    userResource.getFederatedIdentity();
+
+            boolean alreadyLinked = existingIdentities.stream()
+                    .anyMatch(id -> "google".equals(id.getIdentityProvider()));
+
+            if (alreadyLinked) {
+                log.info("Tài khoản Google đã được liên kết cho người dùng: {}", userId);
+                return true;
+            }
+
+            // Tạo FederatedIdentityRepresentation cho Google
+            FederatedIdentityRepresentation googleIdentity = new FederatedIdentityRepresentation();
+            googleIdentity.setIdentityProvider("google");
+
+            // Extract Google ID from token
+            String googleUserId = extractGoogleUserId(accessToken);
+            if (googleUserId == null) {
+                log.error("Không thể trích xuất Google ID từ token");
+                return false;
+            }
+
+            googleIdentity.setUserId(googleUserId);
+            googleIdentity.setUserName(email);
+
+            // Liên kết Identity
+            userResource.addFederatedIdentity("google", googleIdentity);
+            log.info("Đã liên kết tài khoản Google cho người dùng: {}", userId);
+
+            return true;
+        } catch (Exception e) {
+            log.error("Không thể liên kết tài khoản Google cho người dùng {}: {}", userId, e.getMessage());
+            return false;
+        } finally {
+            if (keycloak != null) {
+                keycloak.close();
+            }
+        }
+    }
+
+    private String extractGoogleUserId(String accessToken) {
+        try {
+            // Use the existing subject extraction logic
+            String payload = accessToken.split("\\.")[1];
+            String decodedPayload = new String(java.util.Base64.getDecoder().decode(payload));
+
+            // Extract sub claim which contains user ID
+            int start = decodedPayload.indexOf("\"sub\":\"") + 7;
+            int end = decodedPayload.indexOf("\"", start);
+            return decodedPayload.substring(start, end);
+        } catch (Exception e) {
+            log.error("Lỗi khi trích xuất Google ID từ token: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    public UserRepresentation findUserByEmail(String email) {
+        Keycloak keycloak = null;
+        try {
+            keycloak = getKeycloakInstance();
+            List<UserRepresentation> users = keycloak.realm(realm).users().search(null, null, null, email, 0, 1);
+            return users.stream()
+                    .filter(user -> email.equalsIgnoreCase(user.getEmail()))
+                    .findFirst()
+                    .orElse(null);
+        } catch (Exception e) {
+            log.error("Không thể tìm người dùng với email {}: {}", email, e.getMessage());
+            return null;
         } finally {
             if (keycloak != null) {
                 keycloak.close();

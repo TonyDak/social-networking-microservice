@@ -1,14 +1,14 @@
 package com.example.authservice.controller;
 
-import com.example.authservice.dto.ForgotPasswordRequestDTO;
-import com.example.authservice.dto.TokenResponseDTO;
-import com.example.authservice.dto.LoginRequestDTO;
-import com.example.authservice.dto.RegisterRequestDTO;
+import com.example.authservice.dto.*;
 import com.example.authservice.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.io.UnsupportedEncodingException;
 
 @RestController
 @RequestMapping("/")
@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
 
     private final AuthService authService;
+    @Value("${spring.security.oauth2.redirect-uri}")
+    private String redirectUri;
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody @Valid RegisterRequestDTO registerRequest) {
@@ -34,7 +36,7 @@ public class AuthController {
     }
 
     //logout
-    @PostMapping("/logout")
+    @GetMapping("/logout-user")
     public ResponseEntity<?> logout(@RequestParam String refreshToken) {
         return authService.logoutUser(refreshToken);
     }
@@ -44,11 +46,16 @@ public class AuthController {
         return authService.refreshToken(refreshToken);
     }
     @GetMapping("/google-redirect")
-    public ResponseEntity<?> getGoogleToken(@RequestParam("code") String code) {
-        return authService.processGoogleLogin(code);
+    public ResponseEntity<?> processGoogleLogin(
+            @RequestParam("code") String code,
+            @RequestParam(value = "redirect_uri", required = false) String redirectUri) {
+        if (redirectUri == null || redirectUri.isEmpty()) {
+            redirectUri = this.redirectUri;
+        }
+        return authService.processGoogleLogin(code, redirectUri);
     }
     @GetMapping("/google-login-url")
-    public ResponseEntity<?> getGoogleLoginUrl() {
+    public ResponseEntity<?> getGoogleLoginUrl() throws UnsupportedEncodingException {
         return authService.getGoogleAuthUrl();
     }
 }

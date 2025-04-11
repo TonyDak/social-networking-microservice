@@ -4,6 +4,10 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
+
+import java.time.LocalDate;
+import java.util.Date;
 
 @Data
 @Builder
@@ -14,5 +18,11 @@ public class UserEventDTO {
     private String email;
     private String firstName;
     private String lastName;
+    private String gender;
+
+    private String dateOfBirth;
+
     private String provider;
+    private String phoneNumber;
+    private boolean isProfileComplete;
 }

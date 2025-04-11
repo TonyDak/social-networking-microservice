@@ -7,6 +7,10 @@ import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.Value;
+import org.springframework.format.annotation.DateTimeFormat;
+
+import java.time.LocalDate;
+import java.util.Date;
 
 
 @Valid
@@ -24,5 +28,11 @@ public class RegisterRequestDTO {
 
     private String firstName;
     private String lastName;
+
+    private String gender;
+
+    private String dateOfBirth;
+
+    private String phoneNumber;
 
 }

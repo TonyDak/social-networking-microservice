@@ -13,18 +13,23 @@ spring:
       resourceserver:
         jwt:
           issuer-uri: ${keycloak.auth-server-url}/realms/${keycloak.realm}
-      redirect-uri: http://localhost:8082/api/auth/google-redirect
+      redirect-uri: http://localhost:3000/auth/callback
   kafka:
     bootstrap-servers: localhost:9092
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: com.example.*
 kafka:
   topic:
     user-creation: user-creation-topic
     user-login: user-login-topic
     user-update: user-update-topic
-    user-deletion: user-deletion-topic
+    email-verification-response: email-verification-response-topic
+    email-verification-request: email-verification-request-topic
+
 
 keycloak:
   realm: social-network
@@ -40,15 +45,12 @@ keycloak:
   cors: true
   principal-attribute: preferred_username
   auth-server-url: http://localhost:8080
-  providers:
-    google:
-      clientId: ${GOOGLE_CLIENT_ID}
-      clientSecret: ${GOOGLE_CLIENT_SECRET}
-      defaultScope: openid email profile
 
 logging:
   level:
     org.keycloak: DEBUG
+    org.springframework.security: DEBUG
+    webclient: DEBUG
 eureka:
   client:
     serviceUrl:
