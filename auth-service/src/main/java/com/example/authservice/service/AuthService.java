@@ -135,7 +135,6 @@ public class AuthService {
                         .build();
                 //send kafka message
                 LoginKafkaTemplate.send(userLoginTopic, keycloakId, loginEvent);
-                tokenResponseDTO.setProfileComplete(true);
                 return ResponseEntity.ok(tokenResponseDTO);
             }
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Lỗi hệ thống: Xảy ra lỗi khi xử lý yêu cầu đăng nhập");
@@ -186,7 +185,7 @@ public class AuthService {
         }
     }
 
-    @KafkaListener(topics = "${kafka.topic.user-update}", groupId = "auth-service")
+    @KafkaListener(topics = "${kafka.topic.user-update}", groupId = "auth-service", containerFactory = "userEventKafkaListenerContainerFactory")
     public void handleUpdateUserEvent(UserEventDTO userEvent) {
         try{
             keycloakService.updateUser(userEvent);
@@ -308,7 +307,7 @@ public class AuthService {
                             .isProfileComplete(false)
                             .provider("google")
                             .build();
-                    tokenResponseDTO.setProfileComplete(userEvent.isProfileComplete());
+
                     CreateKafkaTemplate.send(userCreationTopic, email, userEvent);
                 }
 

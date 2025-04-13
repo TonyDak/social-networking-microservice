@@ -31,8 +31,4 @@ public class TokenResponseDTO {
 
     @JsonProperty("scope")
     private String scope;
-
-    @JsonProperty("is_profile_complete")
-    private boolean isProfileComplete;
-
 }

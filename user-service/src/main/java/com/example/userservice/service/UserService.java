@@ -105,6 +105,7 @@ public class UserService {
                     .phoneNumber(user.getPhoneNumber())
                     .bio(user.getBio())
                     .image(user.getProfilePicture())
+                    .isProfileComplete(user.getIsProfileComplete())
                     .build();
         } catch (Exception e) {
             log.error("Error retrieving user info: {}", e.getMessage(), e);
