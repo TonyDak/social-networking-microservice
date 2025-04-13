@@ -11,6 +11,7 @@ public class WebSocketSecurityConfig extends AbstractSecurityWebSocketMessageBro
     @Override
     protected void configureInbound(MessageSecurityMetadataSourceRegistry messages) {
         messages
+                .simpDestMatchers("/chat/**").authenticated()
                 .simpDestMatchers("/app/**").authenticated()
                 .simpSubscribeDestMatchers("/user/**").authenticated()
                 .simpSubscribeDestMatchers("/topic/group/**").authenticated()
