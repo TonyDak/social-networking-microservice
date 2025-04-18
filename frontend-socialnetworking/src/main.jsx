@@ -7,7 +7,7 @@ import App from './App.jsx'
 import AppWithProviders from './App.jsx'
 
 createRoot(document.getElementById('root')).render(
-  // <StrictMode>
+  //<StrictMode>
     <AppWithProviders />
-  // </StrictMode>,
+  //</StrictMode>,
 )

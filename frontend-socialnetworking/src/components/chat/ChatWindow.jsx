@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect} from 'react';
 import Message from './Message';
 import MessageInput from './MessageInput';
 import ChatHeader from './ChatHeader';
@@ -9,18 +9,31 @@ function ChatWindow({
   loading = false, 
   onSendMessage, 
   currentUserId,
-  connected,
   selectedUser
 }) {
   const messagesEndRef = useRef(null);
   
-  // Tự động cuộn xuống khi có tin nhắn mới
+  // Cuộn xuống dưới khi có tin nhắn mới
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
+    console.log('ChatWindow nhận messages:', messages);
+    scrollToBottom();
   }, [messages]);
 
+  // Tự động cuộn xuống khi có tin nhắn mới
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const handleSendMessage = (content) => {
+    // Đảm bảo truyền đúng giá trị lên ChatPage
+    if (!content) {
+        console.error("Invalid message content:", content);
+        return;
+    }
+    
+    // Chỉ truyền content string lên ChatPage
+    onSendMessage(content);
+  };
   // Hiển thị tin nhắn
   const renderMessages = () => {
     if (loading) {
@@ -31,8 +44,8 @@ function ChatWindow({
         </div>
       );
     }
-
-    if (messages.length === 0) {
+  
+    if (!messages || messages.length === 0) {
       return (
         <div className="flex flex-col items-center justify-center h-full py-8 text-gray-500">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -42,14 +55,36 @@ function ChatWindow({
         </div>
       );
     }
-
+  
+    // Xử lý participantDetails từ conversation
+    let participantDetails = {};
+    
+    if (conversation.participantDetails) {
+      // Sử dụng participantDetails nếu đã có
+      participantDetails = conversation.users;
+    }else if (conversation.users) {
+      // Nếu có users từ ConversationList
+      if (conversation.type === 'ONE_TO_ONE' && conversation.users.body) {
+        participantDetails = conversation.users;
+      } else if (conversation.type === 'GROUP' && conversation.users.participants) {
+        // Extract participants for group chat
+        participantDetails = conversation.users.participants.reduce((acc, participant) => {
+          if (participant.body) {
+            acc[participant.users.body.keycloakId] = participant;
+          }
+          return acc;
+        }, {});
+      }
+    }
     return (
       <div className="space-y-4 px-4 py-4">
-        {messages.map((msg) => (
+        {messages.map((msg, index) => (
           <Message
-            key={msg.id || msg.tempId || `${msg.senderId}-${msg.timestamp}`}
+            key={msg.id || msg.tempId || `msg-${index}`}
             message={msg}
             isOwnMessage={msg.senderId === currentUserId}
+            showAvatar={index === 0 || messages[index - 1]?.senderId !== msg.senderId}
+            participantDetails={participantDetails}
           />
         ))}
         <div ref={messagesEndRef} />
@@ -74,14 +109,9 @@ function ChatWindow({
       <div className="border-t border-gray-200 bg-white">
         <MessageInput 
           onSendMessage={onSendMessage}
-          disabled={!connected || (isTemporaryConversation && !currentUserId)}
-          placeholder={
-            !connected 
-              ? "Đang kết nối lại..." 
-              : isTemporaryConversation 
-                ? "Nhắn tin để bắt đầu cuộc trò chuyện" 
-                : "Nhập tin nhắn..."
-          }
+          conversationId={conversation.id}
+          receiverId={conversation.type === 'ONE_TO_ONE' ? conversation.participants[0] : null}
+          conversationType={conversation.type}
         />
       </div>
     </div>

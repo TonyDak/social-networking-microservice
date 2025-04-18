@@ -1,28 +1,27 @@
 import { useState } from 'react';
 
-function MessageInput({ onSendMessage }) {
+function MessageInput({ onSendMessage}) {
     const [message, setMessage] = useState('');
     const [isTyping, setIsTyping] = useState(false);
 
     const handleSubmit = (e) => {
         e.preventDefault();
         if (message.trim()) {
-            onSendMessage(message);
+            // Truyền message.trim() trực tiếp lên onSendMessage
+            console.log("Sending message:", message.trim());
+            onSendMessage(message.trim());
             setMessage('');
+            
+            // Khi gửi tin nhắn, cũng đặt trạng thái isTyping thành false
+            if (isTyping) {
+                setIsTyping(false);
+
+            }
         }
     };
 
     const handleChange = (e) => {
         setMessage(e.target.value);
-        if (!isTyping && e.target.value) {
-            setIsTyping(true);
-            // TODO: Implement typing indicator with websockets
-            // sendTypingStatus(true);
-        } else if (isTyping && !e.target.value) {
-            setIsTyping(false);
-            // TODO: Implement typing indicator with websockets
-            // sendTypingStatus(false);
-        }
     };
 
     return (

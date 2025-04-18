@@ -48,12 +48,6 @@ function App() {
                     () => {
                         console.log('Đã kết nối đến dịch vụ chat');
                         setWebsocketConnected(true);
-                        
-                        // Đăng ký nhận tin nhắn cá nhân ở cấp layout
-                        chatService.onMessage('private', (message) => {
-                            console.log('Đã nhận tin nhắn mới từ layout:', message);
-                            // Có thể xử lý thông báo toàn cục ở đây
-                        });
                     },
                     (error) => {
                         console.error('Lỗi kết nối đến dịch vụ chat:', error);

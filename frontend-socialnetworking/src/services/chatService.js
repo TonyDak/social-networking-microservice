@@ -1,10 +1,15 @@
 import SockJS from 'sockjs-client';
 import { Client } from '@stomp/stompjs';
-import axios from 'axios';
+import { applyAuthInterceptor } from './authService';
+import { apiPrivateClient } from './apiClient';
 
 // Địa chỉ cơ sở và WebSocket của dịch vụ chat
 const WS_URL = import.meta.env.VITE_WS_URL + `/ws`;
 const BASE_URL = import.meta.env.VITE_API_URL + `/chat`;
+
+const chatClient = apiPrivateClient(BASE_URL);
+
+
 
 /**
  * Lớp ChatService - Quản lý tất cả giao tiếp giữa frontend và backend chat service
@@ -34,6 +39,7 @@ class ChatService {
     this.disconnect();
     
     console.log(`Connecting to WebSocket as user ${userId}`);
+    applyAuthInterceptor(chatClient);
     
     // Lưu thông tin xác thực để sử dụng khi kết nối lại
     this.authToken = token;
@@ -85,26 +91,29 @@ class ChatService {
           this.reconnectAttempts = 0;
           this.connected = true;
           
-          // Đăng ký nhận tin nhắn cá nhân
-          try {
-            this.subscribeToPrivateMessages(userId, (message) => {
-              if (this.messageCallbacks.has('private')) {
-                this.messageCallbacks.get('private')(message);
+          setTimeout(() => {
+            try {
+              // Đăng ký nhận tin nhắn cá nhân
+              this.subscribeToPrivateMessages(userId, (message) => {
+                if (this.messageCallbacks.has('private')) {
+                  this.messageCallbacks.get('private')(message);
+                }
+                
+              });
+              
+              // Bắt đầu gửi ping để giữ kết nối
+              this.startPing();
+              
+              if (this.connectedCallback) {
+                this.connectedCallback();
               }
-            });
-            
-            // Bắt đầu gửi ping để giữ kết nối
-            this.startPing();
-            
-            if (this.connectedCallback) {
-              this.connectedCallback();
+            } catch (error) {
+              console.error('Lỗi khi đăng ký nhận tin nhắn:', error);
+              if (this.errorCallback) {
+                this.errorCallback(error.message);
+              }
             }
-          } catch (error) {
-            console.error('Lỗi khi đăng ký nhận tin nhắn:', error);
-            if (this.errorCallback) {
-              this.errorCallback(error.message);
-            }
-          }
+          }, 1000);
         },
         
         // Xử lý sự kiện lỗi
@@ -250,34 +259,57 @@ class ChatService {
    * @returns {boolean} - Trạng thái đăng ký thành công hay không
    */
   subscribeToPrivateMessages(userId, callback) {
-  if (!this.connected) {
-    console.error('WebSocket chưa kết nối, không thể đăng ký kênh');
-    return false;
-  }
-  
-  try {
-    // Địa chỉ nhận tin nhắn cá nhân theo định dạng /user/{userId}/queue/messages
-    const destination = `/user/${userId}/queue/messages`;
-    console.log(`Đăng ký kênh ${destination}`);
+    if (!this.connected || !this.stompClient) {
+      console.error('WebSocket chưa kết nối hoặc stompClient chưa sẵn sàng');
+      return false;
+    }
     
-    const subscription = this.stompClient.subscribe(destination, (message) => {
-      console.log(`Nhận được tin nhắn từ ${destination}`, message);
-      try {
-        const messageData = JSON.parse(message.body);
-        callback(messageData);
-      } catch (e) {
-        console.error('Lỗi khi xử lý tin nhắn:', e);
+    try {
+      // Thêm log id người dùng để xác nhận
+      console.log(`Đang đăng ký kênh cho userId: ${userId}`);
+      
+      // ĐẢM BẢO DESTINATION ĐÚNG HOÀN TOÀN với cấu hình backend
+      // STOMP/Spring WebSocket destination có định dạng:
+      const destination = `/user/${userId}/queue/messages`;
+      
+      console.log(`Đăng ký kênh: ${destination}`);
+      
+      // Thêm debug headers
+      const headers = {
+        'Authorization': `Bearer ${this.authToken}`,
+        'X-User-Id': userId,
+      };
+      
+      // ĐẢM BẢO ĐÃ XÓA SUBSCRIPTION CŨ TRƯỚC KHI TẠO MỚI
+      if (this.subscriptions.has(destination)) {
+        const oldSub = this.subscriptions.get(destination);
+        if (oldSub && oldSub.unsubscribe) {
+          console.log(`Hủy đăng ký kênh cũ: ${destination}`);
+          oldSub.unsubscribe();
+        }
+        this.subscriptions.delete(destination);
       }
-    });
-    
-    this.subscriptions.set(destination, subscription);
-    console.log(`Đã đăng ký thành công kênh ${destination}`);
-    return true;
-  } catch (e) {
-    console.error(`Lỗi khi đăng ký kênh nhận tin nhắn cá nhân:`, e);
-    return false;
+      
+      // Đăng ký với thêm debug
+      const subscription = this.stompClient.subscribe(destination, (message) => {
+        console.log(`===== NHẬN TIN NHẮN WEBSOCKET =====`);
+        try {
+          const messageData = JSON.parse(message.body);
+          callback(messageData);
+        } catch (e) {
+          console.error('Lỗi khi xử lý tin nhắn:', e);
+        }
+      }, headers);
+      
+      this.subscriptions.set(destination, subscription);
+      console.log(`Đã đăng ký thành công kênh ${destination}, ID subscription: ${subscription.id}`);
+      
+      return subscription;
+    } catch (e) {
+      console.error(`Lỗi khi đăng ký kênh nhận tin nhắn cá nhân:`, e);
+      return false;
+    }
   }
-}
 
   /**
    * Đăng ký nhận tin nhắn nhóm
@@ -315,72 +347,138 @@ class ChatService {
    * Ngăn ngừa timeout từ server hoặc firewall
    */
   startPing() {
+    let failedPings = 0;
+    const MAX_FAILED_PINGS = 3;
     // Gửi ping mỗi 30 giây
     this.pingInterval = setInterval(async () => {
       if (this.connected) {
         try {
-          await axios.post(`${BASE_URL}/ping/${this.currentUserId}`, {}, {
+          // Đặt timeout 5 giây cho ping HTTP
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000);
+          
+          // Gửi HTTP ping với timeout
+          await chatClient.post(`/ping/${this.currentUserId}`, {}, {
             headers: {
-              Authorization: `Bearer ${this.authToken}`,
-            }
+              Authorization: `Bearer ${this.authToken}`
+            },
+            signal: controller.signal
           });
+          
+          // Hủy timeout nếu request thành công
+          clearTimeout(timeoutId);
+          
+          // Gửi STOMP ping
           this.stompClient.publish({
             destination: '/app/ping',
             body: JSON.stringify({ timestamp: new Date().toISOString() })
           });
+          
+          // Reset số lần ping thất bại nếu thành công
+          failedPings = 0;
         } catch (error) {
-          console.warn('Lỗi khi gửi ping:', error);
+          // Tăng số lần ping thất bại
+          failedPings++;
+          
+          console.warn(`Lỗi khi gửi ping (${failedPings}/${MAX_FAILED_PINGS}):`, 
+                      error.name === 'AbortError' ? 'Request timeout' : error.message);
+          
+          // Nếu vượt quá số lần ping thất bại cho phép, thử kết nối lại
+          if (failedPings >= MAX_FAILED_PINGS) {
+            console.error(`Vượt quá ${MAX_FAILED_PINGS} lần ping thất bại, đang thử kết nối lại...`);
+            
+            // Đặt connected = false để tránh gửi ping tiếp
+            this.connected = false;
+            
+            // Xóa interval hiện tại
+            clearInterval(this.pingInterval);
+            this.pingInterval = null;
+            
+            // Thử kết nối lại
+            this.handleReconnect();
+          }
         }
       }
     }, 30000);
   }
 
   /**
-   * Gửi tin nhắn cá nhân đến một người dùng
-   * @param {string} receiverId - ID người nhận
-   * @param {string} content - Nội dung tin nhắn 
-   * @param {string} type - Loại tin nhắn (TEXT, IMAGE, VIDEO, v.v.)
-   * @returns {Promise} - Promise kết quả gửi tin nhắn
-   */
-  sendPrivateMessage(receiverId, content, type = 'TEXT') {
-    if (!this.connected) return Promise.reject('WebSocket chưa kết nối');
-    
+ * Gửi tin nhắn đến một người dùng cụ thể
+ * @param {string} receiverId - ID người nhận
+ * @param {string} content - Nội dung tin nhắn
+ * @returns {Promise<Object>} - Thông tin tin nhắn đã gửi
+ */
+async sendPrivateMessage(receiverId, content) {
+  if (!this.connected || !this.currentUserId) {
+    throw new Error('Chưa kết nối đến máy chủ chat');
+  }
+  
+  try {
+    const destination = `/app/chat.private.${receiverId}`;
     const message = {
-      senderId: this.currentUserId, // Thêm senderId
-      receiverId,
-      content,
-      type,
+      senderId: this.currentUserId,
+      receiverId: receiverId,
+      content: content,
       timestamp: new Date().toISOString()
     };
     
+    // Gửi qua websocket
     this.stompClient.publish({
-      destination: `/app/chat.private.${receiverId}`, // Đảm bảo phù hợp với @MessageMapping 
-      body: JSON.stringify(message)
+      destination: destination,
+      body: JSON.stringify(message),
+      headers: { 
+        'content-type': 'application/json',
+        'Authorization': `Bearer ${this.authToken}`,
+        'X-User-Id': this.currentUserId
+      }
     });
-    return Promise.resolve(message);
-  }
-
-  /**
-   * Gửi tin nhắn đến một nhóm
-   * @param {string} conversationId - ID của cuộc trò chuyện nhóm
-   * @param {string} content - Nội dung tin nhắn
-   * @param {string} type - Loại tin nhắn (TEXT, IMAGE, VIDEO, v.v.)
-   * @returns {Promise} - Promise kết quả gửi tin nhắn
-   */
-  sendGroupMessage(conversationId, content, type = 'TEXT') {
-    if (!this.connected) return Promise.reject('WebSocket chưa kết nối');
     
+    console.log(`Đã gửi tin nhắn đến ${receiverId}:`, message);
+    return message;
+  } catch (error) {
+    console.error('Lỗi khi gửi tin nhắn:', error);
+    throw error;
+  }
+}
+
+/**
+ * Gửi tin nhắn đến một nhóm
+ * @param {string} conversationId - ID của cuộc trò chuyện nhóm
+ * @param {string} content - Nội dung tin nhắn
+ * @returns {Promise<Object>} - Thông tin tin nhắn đã gửi
+ */
+async sendGroupMessage(conversationId, content) {
+  if (!this.connected || !this.currentUserId) {
+    throw new Error('Chưa kết nối đến máy chủ chat');
+  }
+  
+  try {
+    const destination = `/app/chat.group.${conversationId}`;
     const message = {
-      senderId: this.currentUserId, // Thêm senderId
-      conversationId,
-      content,
-      type,
+      senderId: this.currentUserId,
+      conversationId: conversationId,
+      content: content,
       timestamp: new Date().toISOString()
     };
     
-    this.stompClient.publish(`/app/chat.group.${conversationId}`, {}, JSON.stringify(message));
-    return Promise.resolve();
+    // Gửi qua websocket
+    this.stompClient.publish({
+      destination: destination,
+      body: JSON.stringify(message),
+      headers: { 
+        'content-type': 'application/json',
+        'Authorization': `Bearer ${this.authToken}`,
+        'X-User-Id': this.currentUserId
+      }
+    });
+    
+    console.log(`Đã gửi tin nhắn đến nhóm ${conversationId}:`, message);
+    return message;
+  } catch (error) {
+    console.error('Lỗi khi gửi tin nhắn nhóm:', error);
+    throw error;
   }
+}
 
   /** 
    * ===== Các API REST =====
@@ -392,7 +490,7 @@ class ChatService {
    * @returns {Promise<Array>} - Danh sách các cuộc trò chuyện
    */
   async getUserConversations() {
-    const response = await axios.get(`${BASE_URL}/conversations`, {
+    const response = await chatClient.get(`/conversations`, {
       headers: {
         Authorization: `Bearer ${this.authToken}`
       }
@@ -406,7 +504,13 @@ class ChatService {
    * @returns {Promise<Array>} - Danh sách tin nhắn trong cuộc trò chuyện
    */
   async getConversationMessages(conversationId) {
-    const response = await axios.get(`${BASE_URL}/${conversationId}/messages`);
+    const response = await chatClient.get(`/messages/${conversationId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${this.authToken}`
+        }
+      }
+    );
     return response.data;
   }
 
@@ -417,7 +521,7 @@ class ChatService {
    * @returns {Promise<Object>} - Thông tin cuộc trò chuyện
    */
   async getPrivateConversation(userId1, userId2) {
-    const response = await axios.get(`${BASE_URL}/conversations/${userId1}/${userId2}`,
+    const response = await chatClient.get(`/conversations/${userId1}/${userId2}`,
       {
         headers: {
           Authorization: `Bearer ${this.authToken}`
@@ -434,7 +538,7 @@ class ChatService {
    * @returns {Promise<void>}
    */
   async markAllAsRead(senderId, receiverId) {
-    await axios.put(`${BASE_URL}/conversations/${senderId}/${receiverId}/read`,
+    await chatClient.put(`/conversations/${senderId}/${receiverId}/read`,
       {},
       {
         headers: {
@@ -450,7 +554,7 @@ class ChatService {
    * @returns {Promise<Object>} - Thông tin cập nhật
    */
   async markMessageAsRead(messageId) {
-    const response = await axios.put(`${BASE_URL}/messages/${messageId}/read`);
+    const response = await chatClient.put(`/messages/${messageId}/read`);
     return response.data;
   }
 
@@ -460,7 +564,7 @@ class ChatService {
    * @returns {Promise<Array>} - Danh sách tin nhắn chưa đọc
    */
   async getUnreadMessages(userId) {
-    const response = await axios.get(`${BASE_URL}/unread/${userId}`);
+    const response = await chatClient.get(`/unread/${userId}`);
     return response.data;
   }
 
@@ -471,7 +575,7 @@ class ChatService {
    * @returns {Promise<Array>} - Danh sách tin nhắn gần đây
    */
   async getRecentMessages(userId, limit = 20) {
-    const response = await axios.get(`${BASE_URL}/recent/${userId}?limit=${limit}`);
+    const response = await chatClient.get(`/recent/${userId}?limit=${limit}`);
     return response.data;
   }
 
@@ -482,7 +586,7 @@ class ChatService {
    * @returns {Promise<Object>} - Thông tin cuộc trò chuyện nhóm đã tạo
    */
   async createGroupConversation(name, participants) {
-    const response = await axios.post(`${BASE_URL}/group`, { name, participants });
+    const response = await chatClient.post(`/group`, { name, participants });
     return response.data;
   }
 
@@ -493,7 +597,7 @@ class ChatService {
    * @returns {Promise<Object>} - Thông tin cập nhật 
    */
   async addMembersToGroup(conversationId, members) {
-    const response = await axios.post(`${BASE_URL}/${conversationId}/members`, { members });
+    const response = await chatClient.post(`/${conversationId}/members`, { members });
     return response.data;
   }
 
@@ -504,7 +608,7 @@ class ChatService {
    * @returns {Promise<Object>} - Thông tin cập nhật
    */
   async removeMemberFromGroup(conversationId, memberId) {
-    const response = await axios.delete(`${BASE_URL}/${conversationId}/members/${memberId}`);
+    const response = await chatClient.delete(`/${conversationId}/members/${memberId}`);
     return response.data;
   }
 
@@ -514,7 +618,7 @@ class ChatService {
    * @returns {Promise<Object>} - Thông tin cập nhật
    */
   async joinGroup(conversationId) {
-    const response = await axios.post(`${BASE_URL}/${conversationId}/join`);
+    const response = await chatClient.post(`/${conversationId}/join`);
     return response.data;
   }
 
@@ -524,7 +628,7 @@ class ChatService {
    * @returns {Promise<Object>} - Thông tin trạng thái người dùng
    */
   async getUserStatus(userId) {
-    const response = await axios.post(`${BASE_URL}/user-status/${userId}`,{},
+    const response = await chatClient.post(`/user-status/${userId}`,{},
       {
         headers: {
           Authorization: `Bearer ${this.authToken}`
@@ -539,7 +643,7 @@ class ChatService {
    * @returns {Promise<Object>} - Thông tin cập nhật
    */
   async setOnlineUserStatus(userId) {
-    const response = await axios.post(`${BASE_URL}/online/${userId}`,{},
+    const response = await chatClient.post(`/online/${userId}`,{},
       {
         headers: {
           Authorization: `Bearer ${this.authToken}`
@@ -554,7 +658,7 @@ class ChatService {
    * @returns {Promise<Object>} - Thông tin cập nhật
    */
   async setOfflineUserStatus(userId) {
-    const response = await axios.post(`${BASE_URL}/offline/${userId}`, {},
+    const response = await chatClient.post(`/offline/${userId}`, {},
       {
         headers: {
           Authorization: `Bearer ${this.authToken}`

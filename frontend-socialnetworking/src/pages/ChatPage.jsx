@@ -3,6 +3,8 @@ import ConversationList from '../components/chat/ConversationList';
 import ChatWindow from '../components/chat/ChatWindow';
 import { useUser } from '../contexts/UserContext';
 import chatService from '../services/chatService';
+import { getUserbyKeycloakId } from '../services/userService';
+import { getCookie } from '../services/apiClient';
 
 function ChatPage({selectedUser, connected, websocketError}) {
     const [selectedConversation, setSelectedConversation] = useState(null);
@@ -10,37 +12,130 @@ function ChatPage({selectedUser, connected, websocketError}) {
     const [messages, setMessages] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadingMessages, setLoadingMessages] = useState(false);
-    const [newMessage, setNewMessage] = useState('');
     const [error, setError] = useState(websocketError);
+    const [chatWindowUser, setChatWindowUser] = useState(null);
     const { user } = useUser();
     // Theo dõi subscription hiện tại để hủy khi cần
     const currentGroupSubscription = useRef(null);
     const processedUserRef = useRef(null);
+    const selectedConversationRef = useRef(selectedConversation);
+    const messageHandlerRef = useRef(null);
 
-    // Xử lý khi selectedUser thay đổi (từ tab FriendsList)
+    // Xử lý WebSocket và nhận tin nhắn
+    useEffect(() => {
+        if (user && connected) {
+            // Chỉ fetch conversations khi đã kết nối
+            fetchConversations();
+    
+            // Đăng ký nhận tin nhắn cá nhân
+            chatService.onMessage('private', (message) => {
+                if (messageHandlerRef.current) {
+                    messageHandlerRef.current(message);
+                }
+            });
+        }
+    
+        return () => {
+            // Cleanup khi component unmount
+            chatService.messageCallbacks.delete('private');
+            if (currentGroupSubscription.current) {
+                currentGroupSubscription.current.unsubscribe();
+                currentGroupSubscription.current = null;
+            }
+        };
+    }, [user, connected]);
+
+    useEffect(() => {
+        selectedConversationRef.current = selectedConversation;
+    }, [selectedConversation]);
+
+    useEffect(() => {
+        messageHandlerRef.current = (message) => {
+            const currentConv = selectedConversationRef.current;
+            // Xử lý tin nhắn với tham chiếu mới nhất
+            if (currentConv && message) {
+                let isCurrentConversation = false;
+                console.log("Nhận tin nhắn:", currentConv);
+                if (currentConv.type === 'ONE_TO_ONE') {
+                    let otherUserId = null;
+                    if(selectedUser){
+                        otherUserId = selectedUser.id;
+                    }
+                    // Nếu không có selectedUser, lấy từ conversation
+                    if (!otherUserId) {
+                        otherUserId = currentConv.users.body.keycloakId;
+                    }
+                    // Kiểm tra xem tin nhắn có thuộc cuộc trò chuyện hiện tại không
+                    isCurrentConversation = (
+                        // Tôi nhận tin từ người kia
+                        (message.senderId === otherUserId && message.receiverId === user.keycloakId) ||
+                        // Tôi gửi tin cho người kia
+                        (message.senderId === user.keycloakId && message.receiverId === otherUserId)
+                    );
+                } else if (currentConv.type === 'GROUP') {
+                    isCurrentConversation = message.conversationId === currentConv.id;
+                }
+                
+                // Nếu tin nhắn thuộc cuộc trò chuyện hiện tại, thêm vào UI
+                if (isCurrentConversation) {
+                    const messageWithTimestamp = {
+                        ...message,
+                        _receivedAt: new Date().getTime() // Thêm timestamp nhận để đảm bảo tin nhắn là object mới
+                    };
+                    setMessages(prev => {
+                        const exists = prev.some(m => m.id === messageWithTimestamp.id);
+                        if (exists) return prev;
+                        
+                        return [...prev, messageWithTimestamp];
+                    });
+                    
+                    // Đánh dấu tin nhắn đã đọc nếu là tin nhắn đến
+                    if (message.senderId !== user.keycloakId && message.id) {
+                        chatService.markMessageAsRead(message.id)
+                            .catch(err => console.error('Lỗi khi đánh dấu tin nhắn đã đọc:', err));
+                    }
+                }
+            }
+            
+            // Luôn cập nhật danh sách cuộc trò chuyện
+            updateConversationWithNewMessage(message);
+        };
+    }, [selectedConversation, user, messages]);
+
+
     useEffect(() => {
         const handleSelectedUser = async () => {
             if (selectedUser && user && connected && selectedUser.id !== processedUserRef.current) {
                 try {
+                    const conversations = await chatService.getUserConversations();
                     processedUserRef.current = selectedUser.id; // Đánh dấu đã xử lý
                     setLoadingMessages(true);
                     
-                    console.log(`Mở cuộc trò chuyện với người dùng: ${selectedUser.name} (${selectedUser.id})`);
-                    
                     // Tìm cuộc trò chuyện hiện có với người dùng này
-                    const existingConv = conversations.find(conv => 
-                        conv.type === 'ONE_TO_ONE' && 
-                        conv.participants.some(id => id === selectedUser.id)
-                    );
-                    
+                    const existingConv = findExistingConversation(conversations, selectedUser?.id);
+                    console.log("Cuộc trò chuyện hiện có:", existingConv);
+
                     if (existingConv) {
                         // Nếu đã có cuộc trò chuyện, chọn nó
                         console.log("Tìm thấy cuộc trò chuyện hiện có:", existingConv.id);
                         handleSelectConversation(existingConv);
                     } else {
-                        // Nếu chưa có, tạo cuộc trò chuyện mới
-                        console.log("Tạo cuộc trò chuyện mới với:", selectedUser.id);
-                        await handleCreateConversation('ONE_TO_ONE', [selectedUser.id]);
+                        // QUAN TRỌNG: Đối với người dùng mới, tạo cuộc trò chuyện tạm thời
+                        // nhưng KHÔNG lưu vào danh sách conversations vì chưa có tin nhắn
+                        console.log("Tạo cuộc trò chuyện tạm thời với:", selectedUser.id);
+                        
+                        const tempConversation = {
+                            id: `temp_${Date.now()}`,
+                            type: 'ONE_TO_ONE',
+                            participants: [selectedUser.id],
+                            participantDetails: selectedUser,
+                            lastActivity: new Date().toISOString(),
+                            isTemporary: true // Đánh dấu là tạm thời
+                        };
+                        
+                        // Chỉ thiết lập selectedConversation, KHÔNG thêm vào conversations
+                        setSelectedConversation(tempConversation);
+                        setMessages([]); // Reset messages
                     }
                     
                     setLoadingMessages(false);
@@ -52,7 +147,7 @@ function ChatPage({selectedUser, connected, websocketError}) {
             }
         };
         
-        if (conversations.length > 0) { // Chỉ xử lý khi danh sách cuộc trò chuyện đã được tải
+        if (conversations.length > 0 || selectedUser) { // Chỉ xử lý khi danh sách cuộc trò chuyện đã được tải hoặc có selectedUser
             handleSelectedUser();
         }
     }, [selectedUser, user, connected, conversations]);
@@ -63,68 +158,27 @@ function ChatPage({selectedUser, connected, websocketError}) {
         }
     }, [websocketError]);
 
-    useEffect(() => {
-        if (user && connected) {
-            // Chỉ fetch conversations khi đã kết nối
-            fetchConversations();
-
-            // Đăng ký nhận tin nhắn cá nhân
-            chatService.onMessage('private', (message) => {
-                console.log('ChatPage nhận tin nhắn mới:', message);
-                
-                // Cập nhật danh sách tin nhắn nếu thuộc về cuộc trò chuyện hiện tại
-                if (selectedConversation) {
-                    const isCurrentConversation = 
-                        (selectedConversation.type === 'ONE_TO_ONE' && 
-                        (message.senderId === selectedConversation.participants[0] || 
-                         message.receiverId === selectedConversation.participants[0])) || 
-                        (selectedConversation.type === 'GROUP' && 
-                         message.conversationId === selectedConversation.id);
-                    
-                    if (isCurrentConversation) {
-                        setMessages(prev => [...prev, message]);
-                        // Đánh dấu là đã đọc
-                        chatService.markMessageAsRead(message.id);
-                    }
-                }
-                
-                // Cập nhật danh sách cuộc trò chuyện
-                updateConversationWithNewMessage(message);
-            });
-        }
-
-        // Ngắt kết nối khi component unmount
-        return () => {
-            if (currentGroupSubscription.current) {
-                currentGroupSubscription.current.unsubscribe();
-                currentGroupSubscription.current = null;
-            }
-            // KHÔNG disconnect ở đây vì kết nối được quản lý ở cấp App
-        };
-    }, [user, connected]); // Thêm connected vào dependencies
+    
 
     // Tải danh sách cuộc trò chuyện
     const fetchConversations = async () => {
         try {
             setLoading(true);
             const data = await chatService.getUserConversations();
+            console.log("Danh sách cuộc trò chuyện:", data);
             setConversations(data);
             setLoading(false);
             
             // Nếu có selectedUser, xử lý sau khi đã tải conversations
             if (selectedUser && user && selectedUser.id !== processedUserRef.current) {
-                const existingConv = data.find(conv => 
-                    conv.type === 'ONE_TO_ONE' && 
-                    conv.participants.some(id => id === selectedUser.id)
-                );
+                const existingConv = findExistingConversation(data, selectedUser?.id);
                 
                 if (existingConv) {
                     handleSelectConversation(existingConv);
                 } else {
-                    handleCreateConversation('ONE_TO_ONE', [selectedUser.id]);
+                    // Không gọi handleCreateConversation nữa, chờ tin nhắn đầu tiên
+                    processedUserRef.current = selectedUser.id;
                 }
-                
-                processedUserRef.current = selectedUser.id;
             }
         } catch (error) {
             console.error("Không thể tải danh sách trò chuyện", error);
@@ -132,169 +186,398 @@ function ChatPage({selectedUser, connected, websocketError}) {
             setLoading(false);
         }
     };
-
-    // Cập nhật cuộc trò chuyện với tin nhắn mới
-    const updateConversationWithNewMessage = (message) => {
-        setConversations(prevConversations => {
-            return prevConversations.map(conv => {
-                // Xác định cuộc trò chuyện cần cập nhật
-                const isTargetConversation = 
-                    (conv.type === 'ONE_TO_ONE' && 
-                    (conv.participants.includes(message.senderId) || 
-                     conv.participants.includes(message.receiverId))) ||
-                    (conv.type === 'GROUP' && conv.id === message.conversationId);
-                
-                if (isTargetConversation) {
-                    // Kiểm tra xem đây có phải là cuộc trò chuyện đang hiển thị không
-                    const isSelected = selectedConversation && conv.id === selectedConversation.id;
+    const findExistingConversation = (conversations, userId) => {
+        if (!userId || !conversations || !Array.isArray(conversations)) return null;
+        
+        const userIdStr = String(userId);
+        
+        return conversations.find(conv => 
+            conv.type === 'ONE_TO_ONE' && 
+            Array.isArray(conv.participants) &&
+            conv.participants.some(id => String(id) === userIdStr)
+        );
+    };
+    const enrichConversationWithUsers = async (conversation) => {
+        try {
+            if (!conversation) return conversation;
+            
+            // Nếu đã có thông tin users, không cần làm gì thêm
+            if (conversation.users) return conversation;
+            
+            const token = getCookie("access_token");
+            
+            if (conversation.type === 'GROUP') {
+                // Xử lý nhóm
+                try {
+                    const participantsInfo = await Promise.all(
+                        conversation.participants.map(async (participantId) => {
+                            try {
+                                const info = await getUserbyKeycloakId(token, participantId);
+                                return info && info.body ? info : { 
+                                    body: { firstName: 'User', lastName: `(${participantId.substring(0, 8)})` } 
+                                };
+                            } catch (err) {
+                                console.error(`Error fetching participant ${participantId}:`, err);
+                                return { 
+                                    body: { firstName: 'User', lastName: `(${participantId.substring(0, 8)})` } 
+                                };
+                            }
+                        })
+                    );
                     
                     return {
-                        ...conv,
-                        lastMessage: message.content,
-                        lastActivity: new Date(),
-                        // Tăng số tin nhắn chưa đọc nếu không phải cuộc trò chuyện hiện tại
-                        unreadCount: isSelected ? 0 : (conv.unreadCount || 0) + 1
+                        ...conversation,
+                        users: {
+                            isGroup: true,
+                            groupName: conversation.name || 'Nhóm không tên',
+                            participants: participantsInfo
+                        }
+                    };
+                } catch (error) {
+                    console.error("Error fetching group participants:", error);
+                    return { 
+                        ...conversation,
+                        users: { groupName: 'Nhóm không xác định' } 
                     };
                 }
-                return conv;
+            } else if (conversation.type === 'ONE_TO_ONE') {
+                // Trong cuộc trò chuyện 1-1, lấy ID người kia
+                const otherParticipantId = conversation.participants.find(id => id !== user.keycloakId);
+                
+                if (!otherParticipantId) {
+                    return { 
+                        ...conversation,
+                        users: { body: { firstName: 'Người dùng', lastName: 'không xác định' } }
+                    };
+                }
+                
+                try {
+                    const otherParticipant = await getUserbyKeycloakId(token, otherParticipantId);
+                    if (otherParticipant && otherParticipant.body) {
+                        return {
+                            ...conversation,
+                            users: otherParticipant
+                        };
+                    }
+                } catch (error) {
+                    console.error("Error fetching user:", error);
+                }
+                
+                // Fallback
+                return { 
+                    ...conversation,
+                    users: { body: { firstName: 'Người dùng', lastName: `(${otherParticipantId.substring(0, 8)})` } }
+                };
+            }
+            
+            // Mặc định nếu không có thông tin
+            return { 
+                ...conversation,
+                users: { body: { firstName: 'Cuộc trò chuyện', lastName: 'không xác định' } }
+            };
+        } catch (error) {
+            console.error("Error enriching conversation:", error);
+            return conversation;
+        }
+    };
+    // Cập nhật cuộc trò chuyện với tin nhắn mới
+    const updateConversationWithNewMessage = (message) => {
+        console.log("Cập nhật danh sách cuộc trò chuyện với tin nhắn:", message);
+        
+        setConversations(async prevConversations => {
+            // Chuyển đổi ID sang dạng chuỗi để so sánh chính xác
+            const senderId = String(message.senderId);
+            const receiverId = String(message.receiverId);
+            
+            // Tìm cuộc trò chuyện hiện có cần cập nhật
+            const existingConversationIndex = prevConversations.findIndex(conv => {
+                if (conv.type === 'ONE_TO_ONE') {
+                    // Chuyển đổi sang string để so sánh chính xác
+                    const participants = conv.participants.map(id => String(id));
+                    return (
+                        participants.includes(senderId) && 
+                        participants.includes(receiverId)
+                    );
+                } else if (conv.type === 'GROUP') {
+                    return String(conv.id) === String(message.conversationId);
+                }
+                return false;
             });
+            
+            // Kiểm tra xem đây có phải là cuộc trò chuyện đang hiển thị không
+            const isSelected = selectedConversationRef.current && (
+                (selectedConversationRef.current.type === 'ONE_TO_ONE' && 
+                  selectedConversationRef.current.participants.some(id => 
+                    String(id) === senderId || String(id) === receiverId
+                  )
+                ) ||
+                (selectedConversationRef.current.type === 'GROUP' && 
+                  String(selectedConversationRef.current.id) === String(message.conversationId)
+                )
+            );
+            
+            // Nếu cuộc trò chuyện đã tồn tại, cập nhật nó
+            if (existingConversationIndex !== -1) {
+                console.log("Cập nhật cuộc trò chuyện hiện có:", prevConversations[existingConversationIndex].id);
+                
+                const updatedConversations = [...prevConversations];
+                updatedConversations[existingConversationIndex] = {
+                    ...updatedConversations[existingConversationIndex],
+                    lastMessage: message.content,
+                    lastMessageContent: message.content, // Thêm trường mới để hỗ trợ tìm kiếm
+                    lastActivity: new Date().toISOString(),
+                    unreadCount: isSelected ? 0 : (updatedConversations[existingConversationIndex].unreadCount || 0) + 1
+                };
+                
+                // Di chuyển cuộc trò chuyện lên đầu
+                const conversationToMove = updatedConversations.splice(existingConversationIndex, 1)[0];
+                return [conversationToMove, ...updatedConversations];
+            } 
+            // Nếu là cuộc trò chuyện mới (chưa có trong danh sách)
+            else if (senderId === String(user.keycloakId) || receiverId === String(user.keycloakId)) {
+                console.log("Tạo cuộc trò chuyện mới từ tin nhắn");
+                
+                // Xác định là cuộc trò chuyện 1-1
+                const otherUserId = senderId === String(user.keycloakId) ? receiverId : senderId;
+                
+                // Lấy thông tin người dùng
+                let userInfo = { body: { firstName: 'Người dùng', lastName: `(${otherUserId.substring(0, 8)})` } };
+                try {
+                    const token = getCookie("access_token");
+                    const fetchedUser = await getUserbyKeycloakId(token, otherUserId);
+                    if (fetchedUser && fetchedUser.body) {
+                        userInfo = fetchedUser;
+                    }
+                } catch (error) {
+                    console.error("Không thể lấy thông tin người dùng:", error);
+                }
+                
+                // Tạo cuộc trò chuyện mới từ tin nhắn
+                const newConversation = {
+                    id: message.conversationId || `conv_${Date.now()}`,
+                    type: 'ONE_TO_ONE',
+                    participants: [otherUserId],
+                    lastMessage: message.content,
+                    lastMessageContent: message.content,
+                    lastActivity: new Date().toISOString(),
+                    unreadCount: isSelected ? 0 : 1,
+                    users: userInfo  // Thêm thông tin users
+                };
+                
+                // Thêm cuộc trò chuyện mới vào đầu danh sách
+                return [newConversation, ...prevConversations];
+            }
+            
+            return prevConversations;
         });
     };
 
     // Xử lý khi người dùng chọn một cuộc trò chuyện
     const handleSelectConversation = async (conversation) => {
         try {
-            setSelectedConversation(conversation);
-            setLoadingMessages(true);
-            
-            // Hủy đăng ký nhóm trước đó nếu có
-            if (currentGroupSubscription.current) {
-                currentGroupSubscription.current.unsubscribe();
-                currentGroupSubscription.current = null;
+            console.log("Chọn cuộc trò chuyện:", conversation);
+            if (!conversation.users) {
+                conversation = await enrichConversationWithUsers(conversation);
             }
+          setSelectedConversation(conversation);
+          setLoadingMessages(true);
+          
+          // Hủy subscription cũ nếu có
+          if (currentGroupSubscription.current) {
+            currentGroupSubscription.current.unsubscribe();
+            currentGroupSubscription.current = null;
+          }
+          
+          let messagesData = [];
+          
+          // Nếu là cuộc trò chuyện có sẵn (không phải tạm thời)
+          if (conversation.id && !conversation.isTemporary) {
+            // Lấy tin nhắn dựa vào conversationId
+            messagesData = await chatService.getConversationMessages(conversation.id);
             
-            // Tải tin nhắn cho cuộc trò chuyện được chọn
-            let messagesData;
-            if (conversation.type === 'GROUP') {
-                messagesData = await chatService.getConversationMessages(conversation.id);
-                
-                // Đăng ký nhận tin nhắn nhóm
-                if (connected) {
-                    currentGroupSubscription.current = chatService.subscribeToGroupMessages(
-                        conversation.id, 
-                        (groupMessage) => {
-                            setMessages(prev => [...prev, groupMessage]);
-                        }
-                    );
-                }
-            } else {
-                // Cuộc trò chuyện một-một
-                // XỬ LÝ TRƯỜNG HỢP PARTICIPANTS BỊ THIẾU
-                let otherUserId;
-                
-                if (!conversation.participants || conversation.participants.length === 0) {
-                    // Nếu không có participants, sử dụng selectedUser nếu có
-                    if (selectedUser) {
-                        otherUserId = selectedUser.id;
-                        // Cập nhật lại conversation để có participants
-                        conversation.participants = [otherUserId];
-                        setSelectedConversation({...conversation, participants: [otherUserId]});
-                    } else {
-                        throw new Error("Không thể xác định người nhận tin nhắn");
-                    }
-                } else {
-                    otherUserId = conversation.participants[0];
-                }
-                
-                // Bây giờ otherUserId đã được đảm bảo
-                messagesData = await chatService.getPrivateConversation(user.id, otherUserId);
-                
-                // Đánh dấu tất cả tin nhắn là đã đọc
-                await chatService.markAllAsRead(otherUserId, user.id);
+            // Đánh dấu tất cả tin nhắn đã đọc
+            if (conversation.type === 'ONE_TO_ONE') {
+              const otherUserId = conversation.participants[0];
+              await chatService.markAllAsRead(otherUserId, user.keycloakId);
             }
-            
-            setMessages(messagesData);
-            
-            // Cập nhật cuộc trò chuyện để đặt unreadCount về 0
-            setConversations(prevConversations => 
-                prevConversations.map(conv => 
-                    conv.id === conversation.id 
-                        ? { ...conv, unreadCount: 0 } 
-                        : conv
-                )
+          } 
+          // Nếu là cuộc trò chuyện tạm (mới bắt đầu với người dùng)
+          else if (conversation.type === 'ONE_TO_ONE') {
+            // Kiểm tra xem có tin nhắn cũ với người này không
+            const otherUserId = conversation.participants[0];
+            try {
+              messagesData = await chatService.getPrivateConversation(
+                user.keycloakId, 
+                otherUserId
+              );
+            } catch (error) {
+                console.error("Lỗi khi lấy tin nhắn cũ:", error);
+                messagesData = [];
+            }
+          }
+          
+          // Cập nhật messages state và scroll xuống
+          setMessages(messagesData);
+          
+          // Đăng ký nhận tin nhắn mới nếu là group chat
+          if (conversation.type === 'GROUP' && connected) {
+            currentGroupSubscription.current = chatService.subscribeToGroupMessages(
+              conversation.id, 
+              (groupMessage) => {
+                setMessages(prev => [...prev, groupMessage]);
+              }
             );
-            
-            setLoadingMessages(false);
+          }
+          
+          // Lấy thông tin người dùng cho ChatWindow
+          let chatUser = selectedUser;
+          if (conversation.type === 'ONE_TO_ONE' && conversation.users?.body) {
+            chatUser = {
+              id: conversation.participants[0],
+              keycloakId: conversation.users.body.keycloakId,
+              name: `${conversation.users.body.firstName || ''} ${conversation.users.body.lastName || ''}`.trim(),
+              avatar: conversation.users.body.avatar
+            };
+          } else if (conversation.type === 'GROUP') {
+            chatUser = {
+              id: conversation.id,
+              name: conversation.name || conversation.users?.groupName || 'Nhóm không tên',
+              isGroup: true,
+              participants: conversation.users?.participants || []
+            };
+          }
+          
+          setChatWindowUser(chatUser);
+          setLoadingMessages(false);
         } catch (error) {
-            console.error("Lỗi khi tải tin nhắn:", error);
-            setError("Không thể tải tin nhắn. Vui lòng thử lại sau.");
-            setLoadingMessages(false);
+          console.error("Lỗi khi tải tin nhắn:", error);
+          setError("Không thể tải tin nhắn. Vui lòng thử lại sau.");
+          setLoadingMessages(false);
         }
-    };
+      };
 
     // Xử lý gửi tin nhắn mới
-    const handleSendMessage = async (content) => {
-        if (!content.trim() || !selectedConversation || !connected) return;
-        
+    const handleSendMessage = async (messageData) => {
         try {
-            // Tạo đối tượng tin nhắn tạm thời để hiển thị ngay
+            const msgData = typeof messageData === 'string' 
+                ? { content: messageData } 
+                : messageData;
+            
+            console.log("Gửi tin nhắn:", selectedConversation);
+
+            if (!msgData.content || !selectedConversation) {
+                console.error("Missing message content or selected conversation");
+                return;
+            }
+
+            let tempId = null;
+            let receiverId = null;
+            if(selectedUser){
+                tempId = `temp-${Date.now()}`;
+                receiverId = selectedUser.id;
+            }
+            if(chatWindowUser){
+                tempId = `temp-${Date.now()}`;
+                receiverId = selectedConversation.users.body.keycloakId;
+            }
+
+            // Optimistic update - Hiển thị tin nhắn ngay lập tức trong UI
             const tempMessage = {
-                id: 'temp-' + Date.now(),
-                content,
-                senderId: user.id,
-                timestamp: new Date(),
-                status: 'sending',
-                type: 'TEXT'
+                tempId: tempId,
+                senderId: user.keycloakId,
+                receiverId: receiverId,
+                content: msgData.content,
+                timestamp: new Date().toISOString(),
+                status: 'SENDING' // Trạng thái SENDING cho đến khi có phản hồi từ server
             };
             
-            // Thêm tin nhắn tạm thời vào danh sách
+            // Cập nhật UI ngay lập tức (không đợi phản hồi server)
             setMessages(prev => [...prev, tempMessage]);
             
-            // Gửi tin nhắn dựa trên loại cuộc trò chuyện
+            let sentMessage;
+            
+            // Gửi tin nhắn đến server
             if (selectedConversation.type === 'GROUP') {
-                await chatService.sendGroupMessage(
+                sentMessage = await chatService.sendGroupMessage(
                     selectedConversation.id,
-                    content
+                    msgData.content
                 );
             } else {
-                // Cuộc trò chuyện một-một
-                const receiverId = selectedConversation.participants[0];
-                await chatService.sendPrivateMessage(receiverId, content);
+                // Gửi tin nhắn private
+                sentMessage = await chatService.sendPrivateMessage(
+                    receiverId,
+                    msgData.content
+                );
             }
             
-            // Cập nhật trạng thái tin nhắn tạm thời thành 'sent'
+            console.log('Tin nhắn đã gửi thành công:', sentMessage);
+            
+            // Cập nhật UI với trạng thái đã gửi
             setMessages(prev => 
-                prev.map(msg => 
-                    msg.id === tempMessage.id 
-                        ? { ...msg, status: 'sent' } 
-                        : msg
+                prev.map(m => 
+                    m.tempId === tempId 
+                        ? { ...m, id: sentMessage.id, status: 'SENT', timestamp: sentMessage.timestamp } 
+                        : m
                 )
             );
             
-            // Cập nhật lastMessage trong conversations
-            setConversations(prev => 
-                prev.map(conv => 
-                    conv.id === selectedConversation.id
-                        ? { ...conv, lastMessage: content, lastActivity: new Date() }
-                        : conv
-                )
-            );
+            // Xử lý cuộc trò chuyện tạm thời
+            if (selectedConversation.isTemporary) {
+                try {
+                    // Tải lại danh sách hoặc tạo mới conversation nếu cần
+                    const updatedConversations = await chatService.getUserConversations();
+                    
+                    const newCreatedConv = updatedConversations.find(conv => 
+                        conv.type === 'ONE_TO_ONE' && 
+                        conv.participants.some(id => id === receiverId)
+                    );
+                    
+                    if (newCreatedConv) {
+                        // Nếu server đã tạo conversation, cập nhật UI
+                        setConversations(updatedConversations);
+                        setSelectedConversation(newCreatedConv);
+                    } else {
+                        // Tạo mới nếu server không tự tạo
+                        const newConv = {
+                            id: sentMessage.conversationId || `conv_${Date.now()}`,
+                            type: 'ONE_TO_ONE',
+                            participants: [receiverId],
+                            participantDetails: selectedConversation.users,
+                            lastMessage: msgData.content,
+                            lastActivity: new Date().toISOString(),
+                            unreadCount: 0
+                        };
+                        
+                        setConversations(prev => [newConv, ...prev]);
+                        setSelectedConversation(newConv);
+                    }
+                } catch (error) {
+                    console.error("Lỗi khi cập nhật cuộc trò chuyện mới:", error);
+                }
+            }
+            
+            // Cập nhật danh sách cuộc trò chuyện
+            updateConversationWithNewMessage({
+                ...sentMessage,
+                tempId: tempId
+            });
+            
         } catch (error) {
-            console.error("Lỗi khi gửi tin nhắn:", error);
+            console.error('Lỗi khi gửi tin nhắn:', error);
             
-            // Cập nhật trạng thái tin nhắn tạm thời thành 'failed'
+            // Đánh dấu tin nhắn lỗi trong UI
             setMessages(prev => 
-                prev.map(msg => 
-                    msg.id === tempMessage.id 
-                        ? { ...msg, status: 'failed' } 
-                        : msg
+                prev.map(m => 
+                    m.tempId === tempId 
+                        ? { ...m, status: 'ERROR' } 
+                        : m
                 )
             );
             
-            setError("Không thể gửi tin nhắn. Vui lòng thử lại sau.");
+            setError('Không thể gửi tin nhắn. Vui lòng thử lại sau.');
         }
     };
-
+    
     // Xử lý tạo cuộc trò chuyện mới
     const handleCreateConversation = async (type, participants, name = '') => {
         try {
@@ -310,9 +593,15 @@ function ChatPage({selectedUser, connected, websocketError}) {
                 newConversation = await chatService.createGroupConversation(name, participants);
             } else {
                 // Lấy hoặc tạo cuộc trò chuyện một-một
-                newConversation = await chatService.getPrivateConversation(user.id, participants[0]);
+                newConversation = await chatService.getPrivateConversation(user.keycloakId, participants[0]);
             }
-            
+            if (!newConversation.participants || newConversation.participants.length === 0) {
+                console.log("API trả về cuộc trò chuyện không có participants, bổ sung...");
+                newConversation = {
+                    ...newConversation,
+                    participants: [...participants]
+                };
+            }
             // Đảm bảo cuộc trò chuyện mới có trường participants
             if (!newConversation.participants || newConversation.participants.length === 0) {
                 console.log("API trả về cuộc trò chuyện không có participants, bổ sung...");
@@ -344,7 +633,27 @@ function ChatPage({selectedUser, connected, websocketError}) {
                     loading={loading}
                     selectedId={selectedConversation?.id}
                     onSelectConversation={handleSelectConversation}
-                    onCreateConversation={handleCreateConversation}
+                    onCreateConversation={async (type, participants, name) => {
+                        // Khi tạo cuộc trò chuyện mới từ ConversationList
+                        if (type === 'ONE_TO_ONE' && participants.length > 0) {
+                            const tempConv = {
+                                id: `temp_${Date.now()}`,
+                                type: 'ONE_TO_ONE',
+                                participants: [participants[0]],
+                                isTemporary: true
+                            };
+                            
+                            // Làm giàu conversation với thông tin users
+                            const enrichedTempConv = await enrichConversationWithUsers(tempConv);
+                            
+                            setSelectedConversation(enrichedTempConv);
+                            setMessages([]);
+                            return enrichedTempConv;
+                        } else {
+                            // Xử lý tạo nhóm như bình thường
+                            return handleCreateConversation(type, participants, name);
+                        }
+                    }}
                     connected={connected}
                 />
             </div>
@@ -367,9 +676,9 @@ function ChatPage({selectedUser, connected, websocketError}) {
                         messages={messages}
                         loading={loadingMessages}
                         onSendMessage={handleSendMessage}
-                        currentUserId={user?.id}
+                        currentUserId={user?.keycloakId}
                         connected={connected}
-                        selectedUser={selectedUser}
+                        selectedUser={chatWindowUser || selectedUser}
                      />
                 ) : (
                     <div className="flex items-center justify-center h-full text-gray-500">
