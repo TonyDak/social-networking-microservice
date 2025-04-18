@@ -158,8 +158,8 @@ function Register() {
             await register(formData);
             navigate('/login', { state: { registered: true } });
         } catch (err) {
-            const errorMessage = err.response?.data?.message || 'Đăng ký thất bại. Vui lòng thử lại sau.';
-            setErrors({ submit: errorMessage });
+            const errorMessage = err.message;
+            setErrors({submit: errorMessage});
         } finally {
             setIsLoading(false);
         }

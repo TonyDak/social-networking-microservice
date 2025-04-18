@@ -1,4 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -9,7 +10,9 @@ import GoogleCallback from './components/auth/GoogleCallback';
 import Sidebar from './components/user/Sidebar';
 import ChatPage from './pages/ChatPage';
 import { UserProvider, useUser } from './contexts/UserContext';
-// Import other components like Home, Profile, etc.
+import FriendsPage from './pages/FriendsPage';
+import chatService from './services/chatService';
+import { getCookie } from './services/apiClient';
 
 // Yêu cầu đăng nhập để truy cập
 const ProtectedRoute = ({ children }) => {
@@ -26,12 +29,62 @@ const PublicRoute = ({ children }) => {
 };
 
 function App() {
-    const ChatLayout = ({ children }) => {
+    const [activeView, setActiveView] = useState('messages'); // 'messages' hoặc 'contacts'
+    const [selectedChatUser, setSelectedChatUser] = useState(null);
+    const [websocketConnected, setWebsocketConnected] = useState(false); // Thêm state cho trạng thái kết nối
+    const [websocketError, setWebsocketError] = useState(null); // Thêm state cho lỗi kết nối
+    const { user } = useUser(); // Lấy thông tin user
+    
+    const ChatLayout = () => {
+        // Kết nối WebSocket khi vào Layout
+        useEffect(() => {
+            if (user) {
+                const token = getCookie('access_token');
+                
+                // Kết nối đến WebSocket server
+                chatService.connect(
+                    token,
+                    user.keycloakId,
+                    () => {
+                        console.log('Đã kết nối đến dịch vụ chat');
+                        setWebsocketConnected(true);
+                        
+                        // Đăng ký nhận tin nhắn cá nhân ở cấp layout
+                        chatService.onMessage('private', (message) => {
+                            console.log('Đã nhận tin nhắn mới từ layout:', message);
+                            // Có thể xử lý thông báo toàn cục ở đây
+                        });
+                    },
+                    (error) => {
+                        console.error('Lỗi kết nối đến dịch vụ chat:', error);
+                        setWebsocketError(error);
+                    }
+                );
+            }
+            
+            // Cleanup khi unmount component
+            return () => {
+                chatService.disconnect();
+            };
+        }, [user]); // Chỉ chạy lại khi user thay đổi
+        
         return (
             <div className="flex h-screen">
-                <Sidebar/>
+                <Sidebar activeTab={activeView} setActiveTab={setActiveView} />
                 <main className="flex-1 overflow-auto">
-                    {children}
+                    {activeView === 'messages' ? (
+                        <ChatPage 
+                            selectedUser={selectedChatUser} 
+                            connected={websocketConnected} 
+                            websocketError={websocketError}
+                        />
+                    ) : (
+                        <FriendsPage 
+                            setActiveTab={setActiveView} 
+                            setSelectedChatUser={setSelectedChatUser}
+                            connected={websocketConnected}
+                        />
+                    )}
                 </main>
             </div>
         );
@@ -57,16 +110,12 @@ function App() {
             } />
             <Route path="/auth/callback" element={<GoogleCallback />} />
             
-            {/* Protected routes - yêu cầu đăng nhập */}
-            {/* Add Chat route */}
+            {/* Main app route */}
             <Route path="/" element={
                 <ProtectedRoute>
-                    <ChatLayout>
-                        <ChatPage />
-                    </ChatLayout>
+                    <ChatLayout />
                 </ProtectedRoute>
             } />
-            
             {/* Add more routes as needed */}
         </Routes>
     );

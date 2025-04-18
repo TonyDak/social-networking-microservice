@@ -1,97 +1,90 @@
-import { useUser } from '../../contexts/UserContext';
-
-
-const Profile = ({onEditClick}) => {
-  const { user, loading, error } = useUser();
-  // Kiểm tra xem component có được mở trong modal không
-  const isInModal = !location.pathname.includes('/profile');
-
-
-  if (loading) return <div className="flex justify-center items-center h-screen">Đang tải...</div>;
-  if (error) return <div className="text-red-500 text-center py-4">{error}</div>;
-  if (!user) return <div className="text-center py-4">Không tìm thấy thông tin người dùng</div>;
+function Profile({ user, showEditButton = true, isFriend = false, onEditClick, onSendMessage }) {
+  if (!user) {
+    return <div className="flex justify-center p-8">Đang tải thông tin...</div>;
+  }
+  
+  // Format ngày sinh nếu có
+  const formatDate = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('vi-VN');
+  };
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="bg-white max-w-2xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-800">Thông tin tài khoản</h1>
-          {isInModal && (
-            <button 
-              onClick={onEditClick}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              Chỉnh sửa
-            </button>
-          )}
+    <div className="p-4">
+      <div className="text-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-800">Thông tin cá nhân</h2>
+      </div>
+      
+      <div className="flex flex-col items-center mb-6">
+        <div className="w-24 h-24 relative mb-4">
+          <div className="w-full h-full rounded-full overflow-hidden border-4 border-gray-200">
+            {user.image ? (
+              <img src={user.image} alt="Avatar" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-gray-200 text-gray-600 text-2xl font-medium">
+                {user.firstName?.charAt(0)}{user.lastName?.charAt(0)}
+              </div>
+            )}
+          </div>
         </div>
-
-        
+        <h3 className="text-xl font-semibold">{user.firstName} {user.lastName}</h3>
+        {user.username && <p className="text-gray-500">@{user.username}</p>}
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-8 mb-6">
         <div>
-          <div className="flex items-center mb-6">
-            <div className="h-20 w-20 rounded-full overflow-hidden bg-gray-200 mr-4">
-              {user.image ? (
-                <img 
-                  src={user.image} 
-                  alt="Ảnh đại diện" 
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="h-full w-full flex items-center justify-center bg-gray-300 text-gray-600">
-                  {user.firstName.charAt(0)+user.lastName?.charAt(0)}
-                </div>
-              )}
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold">{user.firstName +' '+user.lastName || 'Chưa cập nhật'}</h2>
-              <p className="text-gray-600">{user.email}</p>
-            </div>
-          </div>
-          
-          <div className="border-t border-gray-200 pt-4">
-            <div className="mb-4">
-              <h3 className="text-gray-600 font-medium mb-2">Thông tin cá nhân</h3>
-            </div>
-              {/* Giới thiệu */}
-              <div className="mb-4">
-                <p className="text-sm text-gray-500 mb-1">Giới thiệu</p>
-                <p className="text-gray-800">{user.bio || 'Chưa cập nhật'}</p>
-              </div>
-              
-              {/* Giới tính */}
-              <div className="mb-4">
-                <p className="text-sm text-gray-500 mb-1">Giới tính</p>
-                <p className="text-gray-800">
-                  {user.gender ? 
-                    (user.gender === 'MALE' ? 'Nam' : 
-                    user.gender === 'FEMALE' ? 'Nữ' : 'Chưa cập nhật') : 
-                    'Chưa cập nhật'}
-                </p>
-              </div>
-              
-              {/* Ngày sinh */}
-              <div className="mb-4">
-                <p className="text-sm text-gray-500 mb-1">Ngày sinh</p>
-                <p className="text-gray-800">
-                  {user.dateOfBirth ? new Date(user.dateOfBirth).toLocaleDateString('vi-VN', {
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: 'numeric'
-                  }) : 'Chưa cập nhật'}
-                </p>
-              </div>
-              
-              {/* Số điện thoại */}
-              <div className="mb-4">
-                <p className="text-sm text-gray-500 mb-1">Số điện thoại</p>
-                <p className="text-gray-800">{user.phoneNumber || 'Chưa cập nhật'}</p>
-              </div>
-          </div>
+          <h4 className="text-sm text-gray-500 mb-1">Email</h4>
+          <p className="font-medium">{user.email || '(Chưa cung cấp)'}</p>
         </div>
+        <div>
+          <h4 className="text-sm text-gray-500 mb-1">Số điện thoại</h4>
+          <p className="font-medium">{user.phoneNumber || '(Chưa cung cấp)'}</p>
+        </div>
+        <div>
+          <h4 className="text-sm text-gray-500 mb-1">Ngày sinh</h4>
+          <p className="font-medium">{formatDate(user.dateOfBirth) || '(Chưa cung cấp)'}</p>
+        </div>
+        <div>
+          <h4 className="text-sm text-gray-500 mb-1">Giới tính</h4>
+          <p className="font-medium">
+            {user.gender === 'MALE' ? 'Nam' : 
+             user.gender === 'FEMALE' ? 'Nữ' : 
+             user.gender === 'OTHER' ? 'Khác' : '(Chưa cung cấp)'}
+          </p>
+        </div>
+        {user.bio && (
+          <div className="col-span-1 md:col-span-2">
+            <h4 className="text-sm text-gray-500 mb-1">Giới thiệu</h4>
+            <p className="font-medium">{user.bio}</p>
+          </div>
+        )}
+      </div>
+
+      <div className="flex justify-center mt-6 space-x-4">
+        {showEditButton && (
+          <button
+            onClick={onEditClick}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+          >
+            Chỉnh sửa hồ sơ
+          </button>
+        )}
         
+        {isFriend && (
+          <button
+            onClick={onSendMessage}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M18 5v8a2 2 0 01-2 2h-5l-5 4v-4H4a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2zM7 8H5v2h2V8zm2 0h2v2H9V8zm6 0h-2v2h2V8z" clipRule="evenodd" />
+            </svg>
+            Nhắn tin
+          </button>
+        )}
       </div>
     </div>
   );
-};
+}
 
 export default Profile;

@@ -6,10 +6,9 @@ import ProfileUpdate from './ProfileUpdate';
 import { useUser } from '../../contexts/UserContext';
 import { toast } from 'react-toastify';
 
-const Sidebar = () => {
+const Sidebar = ({ activeTab, setActiveTab }) => {
   const { user, refreshUser } = useUser();
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [activeTab, setActiveTab] = useState('messages');
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileView, setProfileView] = useState('view'); 
   const [isRequiredUpdate, setIsRequiredUpdate] = useState(false);
@@ -141,10 +140,7 @@ const Sidebar = () => {
               ? 'bg-indigo-100 text-indigo-700 shadow-sm' 
               : 'text-gray-600 hover:bg-gray-100'
           }`}
-          onClick={() => {
-            setActiveTab('messages');
-            navigate('/');
-          }}
+          onClick={() => setActiveTab('messages')}
           title="Tin nhắn"
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -161,10 +157,7 @@ const Sidebar = () => {
               ? 'bg-indigo-100 text-indigo-700 shadow-sm' 
               : 'text-gray-600 hover:bg-gray-100'
           }`}
-          onClick={() => {
-            setActiveTab('contacts');
-            navigate('/contacts');
-          }}
+          onClick={() => setActiveTab('contacts')}
           title="Danh bạ"
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -215,7 +208,11 @@ const Sidebar = () => {
                 style={{ '-ms-overflow-style': 'none', 'scrollbarWidth': 'none', }} 
                 >
                   {profileView === 'view' ? (
-                    <Profile onEditClick={handleEditProfile} />
+                    <Profile user={user}
+                    onEditClick={handleEditProfile}
+                    showEditButton={true}
+                    isFriend={false}
+                    />
                   ) : (
                     <ProfileUpdate onCancelClick={handleViewProfile} 
                     isRequiredUpdate={isRequiredUpdate} 

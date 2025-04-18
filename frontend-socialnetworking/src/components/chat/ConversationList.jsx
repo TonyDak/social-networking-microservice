@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { vi } from 'date-fns/locale';
+import SearchHeader from '../SearchHeader'; // Adjust the import path as necessary
 
 function ConversationList({ conversations, loading, selectedId, onSelectConversation }) {
     const [searchTerm, setSearchTerm] = useState('');
@@ -23,22 +24,13 @@ function ConversationList({ conversations, loading, selectedId, onSelectConversa
     return (
         <div className="flex flex-col h-full">
             {/* Header */}
-            <div className="p-4">
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Tìm kiếm cuộc trò chuyện..."
-                    className="w-full py-2 pl-9 pr-4 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-transparent text-sm"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                  </div>
-                </div>
-            </div>
+            <SearchHeader
+                searchTerm={searchTerm}
+                setSearchTerm={setSearchTerm}
+                placeholder="Tìm kiếm"
+                onAddFriend={() => {}}
+                onCreateGroup={() => {}}
+            />
             
             {/* Filter options */}
             <div className="flex px-4 py-2 border-b border-gray-200 bg-gray-50">

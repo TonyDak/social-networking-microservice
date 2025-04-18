@@ -28,3 +28,28 @@ export const updateUserProfile = async (token, profileData) => {
         throw new Error(error.response?.data);
     }
   };
+
+export const findUserByPhone = async (token, phoneNumber) => {
+    try {
+        const response = await userClient.post(`/findby-phonenumber`, phoneNumber,{
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        return response.data;
+    } catch (error) {
+        throw new Error(error.response?.data);
+    }
+}
+
+export const getUserbyKeycloakId = async (token, keycloakId) => {
+    try {
+        const response = await userClient.get(`/${keycloakId}`,
+            {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+            }
+        });
+        return response.data;
+    } catch (error) {
+        throw new Error(error.response?.data);
+    }
+}
