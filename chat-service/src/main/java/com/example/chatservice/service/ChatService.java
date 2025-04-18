@@ -192,4 +192,136 @@ public class ChatService {
         return conversationRepository.findByParticipantsContaining(userId);
     }
 
+    /**
+     * Thêm thành viên vào nhóm chat
+     */
+    @Transactional
+    public Conversation addMembersToGroup(String conversationId, String requesterId, List<String> newMembers) {
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy nhóm chat"));
+
+        // Kiểm tra quyền và loại cuộc hội thoại
+        if (!"GROUP".equals(conversation.getType())) {
+            throw new RuntimeException("Không phải là nhóm chat");
+        }
+
+        if (!conversation.getParticipants().contains(requesterId)) {
+            throw new RuntimeException("Bạn không phải là thành viên của nhóm chat này");
+        }
+
+        // Thêm các thành viên mới (bỏ qua những người đã là thành viên)
+        List<String> participants = conversation.getParticipants();
+        for (String memberId : newMembers) {
+            if (!participants.contains(memberId)) {
+                participants.add(memberId);
+            }
+        }
+
+        conversation.setParticipants(participants);
+        conversation.setLastActivity(LocalDateTime.now());
+
+        // Lưu và thông báo
+        Conversation updatedConversation = conversationRepository.save(conversation);
+
+        // Tạo thông báo hệ thống trong nhóm chat
+        ChatMessage systemMessage = new ChatMessage();
+        systemMessage.setConversationId(conversationId);
+        systemMessage.setSenderId("SYSTEM");
+        systemMessage.setContent("Đã thêm " + newMembers.size() + " thành viên mới vào nhóm");
+        systemMessage.setTimestamp(LocalDateTime.now());
+        systemMessage.setType("SYSTEM");
+        chatMessageRepository.save(systemMessage);
+
+        return updatedConversation;
+    }
+
+    /**
+     * Xóa thành viên khỏi nhóm chat
+     */
+    @Transactional
+    public Conversation removeMemberFromGroup(String conversationId, String requesterId, String memberId) {
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy nhóm chat"));
+
+        // Kiểm tra quyền và loại cuộc hội thoại
+        if (!"GROUP".equals(conversation.getType())) {
+            throw new RuntimeException("Không phải là nhóm chat");
+        }
+
+        // Chỉ người tạo nhóm hoặc thành viên được phép xóa chính họ
+        if (!requesterId.equals(conversation.getCreatorId()) && !requesterId.equals(memberId)) {
+            throw new RuntimeException("Bạn không có quyền xóa thành viên khỏi nhóm");
+        }
+
+        // Không cho phép xóa người tạo nhóm
+        if (memberId.equals(conversation.getCreatorId())) {
+            throw new RuntimeException("Không thể xóa người tạo nhóm");
+        }
+
+        // Xóa thành viên
+        List<String> participants = conversation.getParticipants();
+        if (participants.contains(memberId)) {
+            participants.remove(memberId);
+            conversation.setParticipants(participants);
+            conversation.setLastActivity(LocalDateTime.now());
+        } else {
+            throw new RuntimeException("Người dùng không phải là thành viên của nhóm");
+        }
+
+        // Lưu và thông báo
+        Conversation updatedConversation = conversationRepository.save(conversation);
+
+        // Tạo thông báo hệ thống trong nhóm chat
+        ChatMessage systemMessage = new ChatMessage();
+        systemMessage.setConversationId(conversationId);
+        systemMessage.setSenderId("SYSTEM");
+        systemMessage.setContent("Thành viên đã rời nhóm");
+        systemMessage.setTimestamp(LocalDateTime.now());
+        systemMessage.setType("SYSTEM");
+        chatMessageRepository.save(systemMessage);
+
+        return updatedConversation;
+    }
+
+    /**
+     * Tham gia vào nhóm chat
+     */
+    @Transactional
+    public Conversation joinGroup(String conversationId, String userId) {
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy nhóm chat"));
+
+        // Kiểm tra loại cuộc hội thoại
+        if (!"GROUP".equals(conversation.getType())) {
+            throw new RuntimeException("Không phải là nhóm chat");
+        }
+
+        // Kiểm tra xem người dùng đã là thành viên chưa
+        List<String> participants = conversation.getParticipants();
+        if (participants.contains(userId)) {
+            throw new RuntimeException("Bạn đã là thành viên của nhóm chat");
+        }
+
+        // Kiểm tra xem nhóm có cho phép tham gia tự do không (có thể thêm logic kiểm tra ở đây)
+        // Ví dụ: if (!conversation.isPublic()) { throw new RuntimeException("Nhóm chat này không cho phép tham gia tự do"); }
+
+        // Thêm người dùng vào nhóm
+        participants.add(userId);
+        conversation.setParticipants(participants);
+        conversation.setLastActivity(LocalDateTime.now());
+
+        // Lưu và thông báo
+        Conversation updatedConversation = conversationRepository.save(conversation);
+
+        // Tạo thông báo hệ thống trong nhóm chat
+        ChatMessage systemMessage = new ChatMessage();
+        systemMessage.setConversationId(conversationId);
+        systemMessage.setSenderId("SYSTEM");
+        systemMessage.setContent("Thành viên mới đã tham gia nhóm");
+        systemMessage.setTimestamp(LocalDateTime.now());
+        systemMessage.setType("SYSTEM");
+        chatMessageRepository.save(systemMessage);
+
+        return updatedConversation;
+    }
 }

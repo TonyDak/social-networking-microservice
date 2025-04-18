@@ -22,10 +22,11 @@ public class UserEventDTO {
     private String phoneNumber;
     private boolean isProfileComplete;
 
-    public UserEventDTO(String keycloakId, String email, String firstName, String lastName) {
+    public UserEventDTO(String keycloakId, String email, String firstName, String lastName, String phoneNumber) {
         this.keycloakId = keycloakId;
         this.email = email;
         this.firstName = firstName;
         this.lastName = lastName;
+        this.phoneNumber = phoneNumber;
     }
 }

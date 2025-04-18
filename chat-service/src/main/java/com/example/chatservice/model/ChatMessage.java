@@ -23,6 +23,7 @@ public class ChatMessage {
     private String content;
     private LocalDateTime timestamp;
     private String status;
+    private String type; // text, image, video, etc.
 
     @PrePersist
     public void onCreate() {

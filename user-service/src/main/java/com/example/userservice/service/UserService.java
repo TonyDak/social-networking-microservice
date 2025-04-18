@@ -6,6 +6,9 @@ import com.example.userservice.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.ResponseEntity;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.core.Authentication;
@@ -15,6 +18,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Date;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -39,6 +43,11 @@ public class UserService {
             // Kiểm tra user đã tồn tại chưa
             if (userRepository.existsByEmail(userEvent.getEmail())) {
                 log.warn("User với email {} đã tồn tại", userEvent.getEmail());
+                return;
+            }
+            // kiểm tra số điện thoại đã tồn tại chưa
+            if (userRepository.existsByPhoneNumber(userEvent.getPhoneNumber())) {
+                log.warn("User với số điện thoại {} đã tồn tại", userEvent.getPhoneNumber());
                 return;
             }
 
@@ -117,6 +126,12 @@ public class UserService {
         String keycloakId = ((Jwt)authentication.getPrincipal()).getSubject();
         User user = userRepository.findByKeycloakId(keycloakId)
                 .orElseThrow(() -> new RuntimeException("User không tồn tại"));
+        // Kiểm tra số điện thoại đã tồn tại chưa
+        if (userUpdateDTO.getPhoneNumber() != null && !userUpdateDTO.getPhoneNumber().equals(user.getPhoneNumber())) {
+            if (userRepository.existsByPhoneNumber(userUpdateDTO.getPhoneNumber())) {
+                throw new RuntimeException("Số điện thoại đã tồn tại");
+            }
+        }
 
         user.setFirstName(userUpdateDTO.getFirstName());
         user.setLastName(userUpdateDTO.getLastName());
@@ -138,7 +153,8 @@ public class UserService {
                 user.getKeycloakId(),
                 user.getEmail(),
                 user.getFirstName(),
-                user.getLastName()
+                user.getLastName(),
+                user.getPhoneNumber()
         );
         userUpdateDTOKafkaTemplate.send("user-update-topic", user.getKeycloakId() ,userEventDTO);
         return userUpdateDTO;
@@ -171,5 +187,56 @@ public class UserService {
         } catch (Exception e) {
             log.error("Lỗi xử lý yêu cầu kiểm tra email: {}", e.getMessage(), e);
         }
+    }
+    public ResponseEntity<?> findUserbyPhoneNumber(String phoneNumber) {
+        log.info("Đang tìm user với số điện thoại: {}", phoneNumber);
+        Optional<User> userOptional = userRepository.findByPhoneNumber(phoneNumber);
+
+        if (userOptional.isEmpty()) {
+            log.warn("Không tìm thấy user với số điện thoại: {}", phoneNumber);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found");
+        }
+        log.info("Đã tìm thấy user: {}", userOptional.get().getEmail());
+        User user = userOptional.get();
+        UserInfoDTO userInfoDTO = UserInfoDTO.builder()
+                .keycloakId(user.getKeycloakId())
+                .email(user.getEmail())
+                .firstName(user.getFirstName())
+                .lastName(user.getLastName())
+                .gender(String.valueOf(user.getGender()))
+                .dateOfBirth(String.valueOf(user.getDateOfBirth()))
+                .phoneNumber(user.getPhoneNumber())
+                .bio(user.getBio())
+                .image(user.getProfilePicture())
+                .isProfileComplete(user.getIsProfileComplete())
+                .build();
+        return ResponseEntity.ok(userInfoDTO);
+    }
+
+    //get user by keycloakId
+    public ResponseEntity<?> findUserbyKeycloakId(String keycloakId){
+        log.info("Đang tìm user với keycloakId: {}", keycloakId);
+        Optional<User> userOptional = userRepository.findByKeycloakId(keycloakId);
+
+        if (userOptional.isEmpty()) {
+            log.warn("Không tìm thấy user với keycloakId: {}", keycloakId);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found");
+        }
+
+        log.info("Đã tìm thấy user: {}", userOptional.get().getEmail());
+        User user = userOptional.get();
+        UserInfoDTO userInfoDTO = UserInfoDTO.builder()
+                .keycloakId(user.getKeycloakId())
+                .email(user.getEmail())
+                .firstName(user.getFirstName())
+                .lastName(user.getLastName())
+                .gender(String.valueOf(user.getGender()))
+                .dateOfBirth(String.valueOf(user.getDateOfBirth()))
+                .phoneNumber(user.getPhoneNumber())
+                .bio(user.getBio())
+                .image(user.getProfilePicture())
+                .isProfileComplete(user.getIsProfileComplete())
+                .build();
+        return ResponseEntity.ok(userInfoDTO);
     }
 }

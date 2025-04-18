@@ -28,9 +28,6 @@ public class FriendRequest {
     @Column(name = "status", nullable = false)
     private RequestStatus status = RequestStatus.PENDING;
 
-    @Column(name = "message")
-    private String message;
-
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 

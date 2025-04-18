@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/chat")
+@RequestMapping("/")
 public class ChatController {
     private final ChatService chatService;
 
@@ -25,12 +25,6 @@ public class ChatController {
         return ResponseEntity.ok(chatMessage);
     }
 
-    @GetMapping("/conversations/{userId1}/{userId2}")
-    public ResponseEntity<List<ChatMessage>> getConversation(
-            @PathVariable String userId1,
-            @PathVariable String userId2) {
-        return ResponseEntity.ok(chatService.getConversationMessages(userId1, userId2));
-    }
 
     @GetMapping("/messages/{conversationId}")
     public ResponseEntity<List<ChatMessage>> getMessagesByConversationId(
@@ -55,11 +49,5 @@ public class ChatController {
         return ResponseEntity.ok(chatService.markAsRead(messageId));
     }
 
-    @PutMapping("/conversations/{senderId}/{receiverId}/read")
-    public ResponseEntity<?> markAllAsRead(
-            @PathVariable String senderId,
-            @PathVariable String receiverId) {
-        chatService.markAllMessagesAsRead(senderId, receiverId);
-        return ResponseEntity.ok().build();
-    }
+
 }

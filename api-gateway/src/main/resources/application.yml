@@ -10,6 +10,7 @@ spring:
           issuer-uri: http://localhost:8080/realms/social-network
   main:
     web-application-type: reactive
+    allow-circular-references: true
   cloud:
     config:
       uri: http://localhost:8888
@@ -49,12 +50,12 @@ spring:
             - Path=/api/chat/**
           filters:
             - RewritePath=/api/chat/(?<segment>.*), /$\{segment}
-        - id: chat-websocket
-          uri: lb:ws://CHAT-SERVICE
+        - id: chat-service-websocket
+          uri: lb://CHAT-SERVICE
           predicates:
-            - Path=/chat-service/ws/**
+            - Path=/ws/**
           filters:
-            - RewritePath=/chat-service/ws/(?<segment>.*), /ws/$\{segment}
+            - RemoveRequestHeader=Origin
 
         - id: notification-service
           uri: lb://NOTIFICATION-SERVICE

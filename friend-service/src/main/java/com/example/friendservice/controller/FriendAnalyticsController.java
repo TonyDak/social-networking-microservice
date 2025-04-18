@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/friends/analytics")
+@RequestMapping("/analytics")
 @Slf4j
 public class FriendAnalyticsController {
     private final FriendAnalyticsService friendAnalyticsService;

@@ -74,12 +74,21 @@ public class KeycloakService {
                         .entity("Email đã tồn tại")
                         .build();
             }
+            //check phoneNumber
+            if (getUsers().stream().anyMatch(user -> user.getAttributes().get("phoneNumber").contains(request.getPhoneNumber()))) {
+                return Response.status(Response.Status.CONFLICT)
+                        .entity("Số điện thoại đã tồn tại")
+                        .build();
+            }
             UserRepresentation user = new UserRepresentation();
             user.setEmail(request.getEmail());
             user.setFirstName(request.getFirstName());
             user.setLastName(request.getLastName());
             user.setEnabled(true);
             user.setCredentials(Collections.singletonList(credential));
+
+            //thêm phoneNumber vào user
+            user.setAttributes(Collections.singletonMap("phoneNumber", Collections.singletonList(request.getPhoneNumber())));
 
             keycloak = getKeycloakInstance();
             UsersResource usersResource = keycloak.realm(realm).users();
@@ -200,6 +209,8 @@ public class KeycloakService {
                     user.setEmail(userEvent.getEmail());
                     user.setFirstName(userEvent.getFirstName());
                     user.setLastName(userEvent.getLastName());
+                    // Cập nhật số điện thoại
+                    user.setAttributes(Collections.singletonMap("phoneNumber", Collections.singletonList(userEvent.getPhoneNumber())));
                     usersResource.get(user.getId()).update(user);
                     return Response.ok().entity("Cập nhật thông tin người dùng thành công").build();
                 }

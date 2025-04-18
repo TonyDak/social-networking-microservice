@@ -9,6 +9,12 @@ import com.example.friendservice.repository.FriendRequestRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,7 +27,6 @@ import java.util.List;
 public class FriendService {
     private final FriendRepository friendRepository;
     private final FriendRequestRepository friendRequestRepository;
-    private final FriendCacheService cacheService;
     private final KafkaTemplate<String, FriendEvent> kafkaTemplate;
 
     @Value("${kafka.topic.friend-accepted}")
@@ -30,50 +35,30 @@ public class FriendService {
     @Autowired
     public FriendService(FriendRepository friendRepository,
                          FriendRequestRepository friendRequestRepository,
-                         FriendCacheService cacheService,
                          KafkaTemplate<String, FriendEvent> kafkaTemplate) {
         this.friendRepository = friendRepository;
         this.friendRequestRepository = friendRequestRepository;
-        this.cacheService = cacheService;
         this.kafkaTemplate = kafkaTemplate;
     }
 
     @Transactional(readOnly = true)
+    @Cacheable(value = "friends", key = "'user_' + #userId + '_page_' + #page + '_size_' + #size")
     public List<Friend> getFriends(String userId, int page, int size) {
-        // Try to get from cache first
-        List<Friend> cachedFriends = cacheService.getFriendList(userId);
-        if (cachedFriends != null) {
-            log.info("Retrieved friends for user {} from cache", userId);
-            return cachedFriends;
-        }
+        log.info("Retrieving friends from database for user {}", userId);
+        return friendRepository.findFriendsPaginated(userId, size, page * size);
+    }
 
-        // Get from database with pagination
-        List<Friend> friends = friendRepository.findFriendsPaginated(userId, size, page * size);
-
-        // Cache the result
-        if (page == 0) {
-            cacheService.cacheFriendList(userId, friends);
-        }
-
-        return friends;
+    @Transactional(readOnly = true)
+    @Cacheable(value = "friends", key = "'user_' + #userId + '_page_' + #page + '_size_' + #size + '_sort_' + #sortBy + '_' + #sortDirection")
+    public List<Friend> getFriends(String userId, int page, int size, String sortBy, String sortDirection) {
+        log.info("Retrieving sorted friends from database for user {}", userId);
+        Sort sort = Sort.by(sortDirection.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC, sortBy);
+        Pageable pageable = PageRequest.of(page, size, sort);
+        return friendRepository.findFriendsByUserId(userId, pageable).getContent();
     }
 
     @Transactional
-    public Friend addFriend(Friend friend) {
-        // Check if already friends
-        if (friendRepository.existsByUserIdAndFriendId(friend.getUserId(), friend.getFriendId())) {
-            throw new BadRequestException("Already friends");
-        }
-
-        Friend savedFriend = friendRepository.save(friend);
-
-        // Invalidate cache
-        cacheService.invalidateCache(friend.getUserId());
-
-        return savedFriend;
-    }
-
-    @Transactional
+    @CacheEvict(value = "friends", allEntries = true)
     public void removeFriend(String userId, String friendId) {
         Friend friend = friendRepository.findByUserIdAndFriendId(userId, friendId)
                 .orElseThrow(() -> new BadRequestException("Friend relationship not found"));
@@ -83,10 +68,6 @@ public class FriendService {
         // Remove reciprocal relationship
         friendRepository.findByUserIdAndFriendId(friendId, userId)
                 .ifPresent(friendRepository::delete);
-
-        // Invalidate cache for both users
-        cacheService.invalidateCache(userId);
-        cacheService.invalidateCache(friendId);
     }
 
     @Transactional
@@ -111,6 +92,10 @@ public class FriendService {
     }
 
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = "friends", allEntries = true),
+            @CacheEvict(value = "pendingRequests", allEntries = true)
+    })
     public void acceptFriendRequest(Long requestId, String userId) {
         FriendRequest request = friendRequestRepository.findById(requestId)
                 .orElseThrow(() -> new BadRequestException("Friend request not found"));
@@ -140,10 +125,6 @@ public class FriendService {
         friendRepository.save(friend1);
         friendRepository.save(friend2);
 
-        // Invalidate cache for both users
-        cacheService.invalidateCache(request.getSenderId());
-        cacheService.invalidateCache(request.getReceiverId());
-
         // Send event to Kafka
         FriendEvent event = new FriendEvent();
         event.setType("FRIEND_ACCEPTED");
@@ -153,10 +134,16 @@ public class FriendService {
 
         kafkaTemplate.send(friendAcceptedTopic, event);
     }
-    // Thêm vào class FriendService
+
     @Transactional(readOnly = true)
+    @Cacheable(value = "pendingRequests", key = "'user_' + #userId + '_page_' + #page + '_size_' + #size")
     public List<FriendRequest> getPendingRequests(String userId, int page, int size) {
-        return friendRequestRepository.findPendingRequestsPaginated(userId, size, page * size);
+        try {
+            return friendRequestRepository.findPendingRequestsPaginated(userId, size, page * size);
+        } catch (Exception e) {
+            log.error("Lỗi cache, truy vấn trực tiếp database", e);
+            return friendRequestRepository.findPendingRequestsPaginated(userId, size, page * size);
+        }
     }
 
     @Transactional

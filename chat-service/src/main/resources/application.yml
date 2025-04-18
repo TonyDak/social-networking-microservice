@@ -1,6 +1,9 @@
 server:
   port: 8084
 spring:
+  main:
+    allow-circular-references: true
+    allow-bean-definition-overriding: true
   application:
     name: chat-service
   cloud:
@@ -15,6 +18,13 @@ spring:
   data:
     mongodb:
       uri: mongodb://localhost:27017/chat_db
+
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000
+      repositories:
+        enabled: true
 
   kafka:
     bootstrap-servers: localhost:9092
@@ -48,3 +58,17 @@ eureka:
   instance:
     hostname: localhost
     preferIpAddress: true
+user:
+  status:
+    expiry: 3600
+logging:
+  level:
+    org:
+    springframework:
+      messaging: DEBUG
+      security:
+        messaging: DEBUG
+      web:
+        socket: DEBUG
+        socket.server: DEBUG
+

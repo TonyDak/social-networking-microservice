@@ -1,7 +1,7 @@
 package com.example.userservice.controller;
 
 
-import com.example.userservice.dto.UserInfoDTO;
+import com.example.userservice.dto.PhoneRequestDTO;
 import com.example.userservice.dto.UserUpdateDTO;
 import com.example.userservice.service.UserService;
 import lombok.RequiredArgsConstructor;
@@ -24,5 +24,15 @@ public class UserController {
     @PutMapping("/me/update")
     public ResponseEntity<?> updateUser(Authentication authentication, @RequestBody UserUpdateDTO userUpdateDTO) {
         return ResponseEntity.ok(userService.updateUser(userUpdateDTO, authentication));
+    }
+
+    @PostMapping("/findby-phonenumber")
+    public ResponseEntity<?> findUserByPhone(@RequestBody PhoneRequestDTO phoneRequestDTO) {
+        return ResponseEntity.ok(userService.findUserbyPhoneNumber(phoneRequestDTO.getPhoneNumber()));
+    }
+
+    @GetMapping("/{userId}")
+    public ResponseEntity<?> getUserById(@PathVariable String userId) {
+        return ResponseEntity.ok(userService.findUserbyKeycloakId(userId));
     }
 }

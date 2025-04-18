@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/friends")
+@RequestMapping("/")
 @Slf4j
 public class FriendController {
     private final FriendService friendService;
@@ -27,12 +27,19 @@ public class FriendController {
     public ResponseEntity<List<Friend>> getFriends(
             @RequestHeader("X-User-ID") String userId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String sortBy,
+            @RequestParam(defaultValue = "asc") String sortDirection) {
         log.info("Getting friends for user {} with page={}, size={}", userId, page, size);
-        return ResponseEntity.ok(friendService.getFriends(userId, page, size));
+
+        if (sortBy != null) {
+            return ResponseEntity.ok(friendService.getFriends(userId, page, size, sortBy, sortDirection));
+        } else {
+            return ResponseEntity.ok(friendService.getFriends(userId, page, size));
+        }
     }
 
-    @PostMapping("/requests")
+    @PostMapping("/request")
     public ResponseEntity<FriendRequest> sendFriendRequest(
             @RequestHeader("X-User-ID") String userId,
             @Valid @RequestBody FriendRequest request) {

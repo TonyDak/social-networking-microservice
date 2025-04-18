@@ -12,10 +12,6 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class FriendRequestDTO {
-    private Long id;
     private String senderId;
     private String receiverId;
-    private String status;
-    private String message;
-    private LocalDateTime createdAt;
 }
