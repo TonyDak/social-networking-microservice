@@ -38,7 +38,6 @@ public class UserStatusService {
         UserStatus status = new UserStatus(userId, "ONLINE", userStatusExpiry);
         userStatusRepository.save(status);
         userStatusMap.put(userId, status);
-        logger.info("User {} is online", userId);
         broadcastUserStatus(userId, "ONLINE");
     }
 
@@ -46,7 +45,6 @@ public class UserStatusService {
         UserStatus status = new UserStatus(userId, "OFFLINE", null);
         userStatusRepository.save(status);
         userStatusMap.remove(userId);
-        logger.info("User {} is offline", userId);
         broadcastUserStatus(userId, "OFFLINE");
     }
 

@@ -25,7 +25,6 @@ public class ChatController {
         return ResponseEntity.ok(chatMessage);
     }
 
-
     @GetMapping("/messages/{conversationId}")
     public ResponseEntity<List<ChatMessage>> getMessagesByConversationId(
             @PathVariable String conversationId) {
@@ -49,5 +48,18 @@ public class ChatController {
         return ResponseEntity.ok(chatService.markAsRead(messageId));
     }
 
+    @GetMapping("/conversations/{userId1}/{userId2}")
+    public ResponseEntity<List<ChatMessage>> getConversation(
+            @PathVariable String userId1,
+            @PathVariable String userId2) {
+        return ResponseEntity.ok(chatService.getConversationMessages(userId1, userId2));
+    }
+    @PutMapping("/conversations/{senderId}/{receiverId}/read")
+    public ResponseEntity<?> markAllAsRead(
+            @PathVariable String senderId,
+            @PathVariable String receiverId) {
+        chatService.markAllMessagesAsRead(senderId, receiverId);
+        return ResponseEntity.ok().build();
+    }
 
 }

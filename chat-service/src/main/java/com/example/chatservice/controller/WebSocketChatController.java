@@ -55,4 +55,5 @@ public class WebSocketChatController {
         // Đơn giản chỉ nhận message và không làm gì
         System.out.println("Received heartbeat ping from client");
     }
+
 }

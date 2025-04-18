@@ -22,19 +22,6 @@ public class ConversationController {
     public ResponseEntity<List<Conversation>> getUserConversations(Principal principal) {
         return ResponseEntity.ok(chatService.getUserConversations(principal.getName()));
     }
-    @GetMapping("/conversations/{userId1}/{userId2}")
-    public ResponseEntity<List<ChatMessage>> getConversation(
-            @PathVariable String userId1,
-            @PathVariable String userId2) {
-        return ResponseEntity.ok(chatService.getConversationMessages(userId1, userId2));
-    }
-    @PutMapping("/conversations/{senderId}/{receiverId}/read")
-    public ResponseEntity<?> markAllAsRead(
-            @PathVariable String senderId,
-            @PathVariable String receiverId) {
-        chatService.markAllMessagesAsRead(senderId, receiverId);
-        return ResponseEntity.ok().build();
-    }
 
     @PostMapping("/group")
     public ResponseEntity<Conversation> createGroupConversation(
@@ -50,12 +37,6 @@ public class ConversationController {
         return ResponseEntity.ok(conversation);
     }
 
-    @GetMapping("/{conversationId}/messages")
-    public ResponseEntity<?> getConversationMessages(
-            @PathVariable String conversationId,
-            Principal principal) {
-        return ResponseEntity.ok(chatService.getMessagesByConversationId(conversationId));
-    }
     @PostMapping("/{conversationId}/members")
     public ResponseEntity<Conversation> addMembersToGroup(
             @PathVariable String conversationId,
