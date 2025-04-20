@@ -1,0 +1,11 @@
+# Bỏ qua tất cả các file .log
+*.log
+
+# Bỏ qua thư mục node_modules
+/node_modules/
+
+# Bỏ qua thư mục build
+/build/
+/.idea
+/.env
+/.gitignore
