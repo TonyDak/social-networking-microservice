@@ -78,12 +78,22 @@ public class FriendController {
         return ResponseEntity.ok().build();
     }
 
-    @DeleteMapping("/{friendId}")
+    @DeleteMapping("/remove/{friendId}")
     public ResponseEntity<Void> removeFriend(
             @RequestHeader("X-User-ID") String userId,
             @PathVariable String friendId) {
         log.info("Removing friend relationship between {} and {}", userId, friendId);
         friendService.removeFriend(userId, friendId);
         return ResponseEntity.ok().build();
+    }
+
+    //areFriends
+    @GetMapping("/areFriends/{friendId}")
+    public ResponseEntity<Boolean> areFriends(
+            @RequestHeader("X-User-ID") String userId,
+            @PathVariable String friendId) {
+        log.info("Checking if {} and {} are friends", userId, friendId);
+        boolean areFriends = friendService.areFriends(userId, friendId);
+        return ResponseEntity.ok(areFriends);
     }
 }

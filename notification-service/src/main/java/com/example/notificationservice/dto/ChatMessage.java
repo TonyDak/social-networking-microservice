@@ -3,7 +3,7 @@ package com.example.notificationservice.dto;
 import lombok.Data;
 
 @Data
-public class ChatMessageDto {
+public class ChatMessage {
     private String id;
     private String senderId;
     private String receiverId;

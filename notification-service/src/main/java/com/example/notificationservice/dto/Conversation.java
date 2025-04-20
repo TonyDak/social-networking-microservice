@@ -5,7 +5,7 @@ import lombok.Data;
 import java.util.List;
 
 @Data
-public class ConversationDto {
+public class Conversation {
     private String id;
     private String name;
     private List<String> participants;

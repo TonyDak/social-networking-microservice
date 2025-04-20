@@ -93,8 +93,7 @@ public class FriendService {
 
     @Transactional
     @Caching(evict = {
-            @CacheEvict(value = "friends", allEntries = true),
-            @CacheEvict(value = "pendingRequests", allEntries = true)
+            @CacheEvict(value = "friends", allEntries = true)
     })
     public void acceptFriendRequest(Long requestId, String userId) {
         FriendRequest request = friendRequestRepository.findById(requestId)
@@ -136,14 +135,8 @@ public class FriendService {
     }
 
     @Transactional(readOnly = true)
-    @Cacheable(value = "pendingRequests", key = "'user_' + #userId + '_page_' + #page + '_size_' + #size")
     public List<FriendRequest> getPendingRequests(String userId, int page, int size) {
-        try {
-            return friendRequestRepository.findPendingRequestsPaginated(userId, size, page * size);
-        } catch (Exception e) {
-            log.error("Lỗi cache, truy vấn trực tiếp database", e);
-            return friendRequestRepository.findPendingRequestsPaginated(userId, size, page * size);
-        }
+        return friendRequestRepository.findPendingRequestsPaginated(userId, size, page * size);
     }
 
     @Transactional
@@ -163,5 +156,10 @@ public class FriendService {
         // Update request status
         request.setStatus(FriendRequest.RequestStatus.REJECTED);
         friendRequestRepository.save(request);
+    }
+
+    //check if user is already friends
+    public boolean areFriends(String userId, String friendId) {
+        return friendRepository.existsByUserIdAndFriendId(userId, friendId);
     }
 }

@@ -1,7 +1,6 @@
 package com.example.notificationservice.service;
 
-import com.example.notificationservice.dto.ChatMessageDto;
-import com.example.notificationservice.dto.ConversationDto;
+import com.example.notificationservice.dto.ChatMessage;
 import com.example.notificationservice.model.Notification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +24,7 @@ public class NotificationService {
     private static final String UNREAD_COUNT_KEY = "unread_count:";
     private static final int NOTIFICATION_TTL = 7; // số ngày lưu thông báo
 
-    public void createMessageNotification(ChatMessageDto message) {
+    public void createMessageNotification(ChatMessage message) {
         Notification notification = new Notification();
         notification.setId(UUID.randomUUID().toString());
         notification.setUserId(message.getReceiverId());
@@ -48,7 +47,7 @@ public class NotificationService {
         log.info("Created notification for user: {}", message.getReceiverId());
     }
 
-    public void createGroupMessageNotifications(ChatMessageDto message, List<String> participants) {
+    public void createGroupMessageNotifications(ChatMessage message, List<String> participants) {
         participants.stream()
                 .filter(userId -> !userId.equals(message.getSenderId()))
                 .forEach(userId -> {
