@@ -1,7 +1,10 @@
-import { useRef, useEffect} from 'react';
+import { useRef, useEffect, useState} from 'react';
 import Message from './Message';
 import MessageInput from './MessageInput';
 import ChatHeader from './ChatHeader';
+import { useUser } from '../../contexts/UserContext';
+import { checkFriendship, sendFriendRequest } from '../../services/friendService';
+import { toast } from 'react-toastify';
 
 function ChatWindow({ 
   conversation, 
@@ -11,11 +14,41 @@ function ChatWindow({
   currentUserId,
   selectedUser
 }) {
+  const { user } = useUser();
   const messagesEndRef = useRef(null);
-  
+  const [friendStatus, setFriendStatus] = useState({});
+
+  useEffect(() => {
+    const fetchFriendshipStatus = async () => {
+      if (selectedUser && user && conversation?.type !== 'GROUP') {
+        try {
+          const recipientId = selectedUser.keycloakId;
+          // Use the imported service function with correct naming
+          const response = await checkFriendship(user.keycloakId, recipientId);
+          setFriendStatus(prev => ({
+            ...prev,
+            [recipientId]: response.isFriend
+          }));
+        } catch (error) {
+          console.error('Lỗi khi kiểm tra trạng thái bạn bè:', error);
+        }
+      }
+    };
+    
+    fetchFriendshipStatus();
+  }, [selectedUser, user, conversation]);
+  const handleSendFriendRequest = async (recipientId) => {
+    try {
+      await sendFriendRequest(user.keycloakId, recipientId);
+      toast.success('Đã gửi lời mời kết bạn!');
+    } catch (error) {
+      console.error('Lỗi khi gửi lời mời kết bạn:', error);
+      toast.error('Không thể gửi lời mời kết bạn. Vui lòng thử lại sau.');
+    }
+  };
+
   // Cuộn xuống dưới khi có tin nhắn mới
   useEffect(() => {
-    console.log('ChatWindow nhận messages:', messages);
     scrollToBottom();
   }, [messages]);
 
@@ -100,6 +133,8 @@ function ChatWindow({
       <ChatHeader 
         conversation={conversation}
         selectedUser={selectedUser}
+        isFriend={selectedUser ? friendStatus[selectedUser.keycloakId] : false}
+        onSendFriendRequest={handleSendFriendRequest}
       />
       
       <div className="flex-1 overflow-y-auto bg-gray-50">
@@ -108,10 +143,8 @@ function ChatWindow({
       
       <div className="border-t border-gray-200 bg-white">
         <MessageInput 
-          onSendMessage={onSendMessage}
-          conversationId={conversation.id}
-          receiverId={conversation.type === 'ONE_TO_ONE' ? conversation.participants[0] : null}
-          conversationType={conversation.type}
+          onSendMessage={onSendMessage} 
+          disabled={loading}
         />
       </div>
     </div>

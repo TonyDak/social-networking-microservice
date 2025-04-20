@@ -9,8 +9,6 @@ const BASE_URL = import.meta.env.VITE_API_URL + `/chat`;
 
 const chatClient = apiPrivateClient(BASE_URL);
 
-
-
 /**
  * Lớp ChatService - Quản lý tất cả giao tiếp giữa frontend và backend chat service
  * Bao gồm: kết nối WebSocket, đăng ký nhận tin nhắn, gửi tin nhắn, API REST
@@ -311,6 +309,7 @@ class ChatService {
     }
   }
 
+
   /**
    * Đăng ký nhận tin nhắn nhóm
    * @param {string} conversationId - ID của cuộc trò chuyện nhóm
@@ -338,6 +337,7 @@ class ChatService {
    * @param {function} callback - Hàm xử lý
    */
   onMessage(type, callback) {
+    console.log(`Đăng ký callback cho ${type}`);
     this.messageCallbacks.set(type, callback);
   }
 
@@ -419,7 +419,8 @@ async sendPrivateMessage(receiverId, content) {
       senderId: this.currentUserId,
       receiverId: receiverId,
       content: content,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      type: 'ONE_TO_ONE'
     };
     
     // Gửi qua websocket
@@ -458,7 +459,8 @@ async sendGroupMessage(conversationId, content) {
       senderId: this.currentUserId,
       conversationId: conversationId,
       content: content,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      type: 'GROUP'
     };
     
     // Gửi qua websocket
@@ -665,6 +667,94 @@ async sendGroupMessage(conversationId, content) {
         }
       });
     return response.data;
+  }
+
+  subscribeToCallNotifications(userId, callback) {
+    if (!this.connected || !this.stompClient) {
+      console.error('WebSocket chưa kết nối');
+      return false;
+    }
+    
+    try {
+      // Đường dẫn đến kênh cuộc gọi
+      const destination = `/user/${userId}/queue/calls`;
+      
+      // Hủy đăng ký cũ nếu có
+      if (this.subscriptions.has(destination)) {
+        const oldSub = this.subscriptions.get(destination);
+        if (oldSub && oldSub.unsubscribe) {
+          oldSub.unsubscribe();
+        }
+        this.subscriptions.delete(destination);
+      }
+      
+      console.log(`Đăng ký kênh cuộc gọi: ${destination}`);
+      
+      // Đăng ký với STOMP client
+      const subscription = this.stompClient.subscribe(destination, (message) => {
+        console.log(`Nhận thông báo cuộc gọi:`, message);
+        try {
+          const messageData = JSON.parse(message.body);
+          callback(messageData);
+        } catch (e) {
+          console.error('Lỗi xử lý thông báo cuộc gọi:', e);
+        }
+      }, {
+        'Authorization': `Bearer ${this.authToken}`,
+        'X-User-Id': userId
+      });
+      
+      this.subscriptions.set(destination, subscription);
+      return subscription;
+    } catch (e) {
+      console.error('Lỗi khi đăng ký kênh cuộc gọi:', e);
+      return false;
+    }
+  }
+  
+  // Tương tự cho kênh tín hiệu WebRTC
+  subscribeToSignalChannel(userId, callback) {
+    // Tương tự code trên nhưng dùng `/user/${userId}/queue/signals`
+    if (!this.connected || !this.stompClient) {
+      console.error('WebSocket chưa kết nối');
+      return false;
+    }
+    
+    try {
+      // Đường dẫn đến kênh cuộc gọi
+      const destination = `/user/${userId}/queue/signals`;
+      
+      // Hủy đăng ký cũ nếu có
+      if (this.subscriptions.has(destination)) {
+        const oldSub = this.subscriptions.get(destination);
+        if (oldSub && oldSub.unsubscribe) {
+          oldSub.unsubscribe();
+        }
+        this.subscriptions.delete(destination);
+      }
+      
+      console.log(`Đăng ký kênh cuộc gọi: ${destination}`);
+      
+      // Đăng ký với STOMP client
+      const subscription = this.stompClient.subscribe(destination, (message) => {
+        console.log(`Nhận thông báo cuộc gọi:`, message);
+        try {
+          const messageData = JSON.parse(message.body);
+          callback(messageData);
+        } catch (e) {
+          console.error('Lỗi xử lý thông báo cuộc gọi:', e);
+        }
+      }, {
+        'Authorization': `Bearer ${this.authToken}`,
+        'X-User-Id': userId
+      });
+      
+      this.subscriptions.set(destination, subscription);
+      return subscription;
+    } catch (e) {
+      console.error('Lỗi khi đăng ký kênh cuộc gọi:', e);
+      return false;
+    }
   }
 }
 

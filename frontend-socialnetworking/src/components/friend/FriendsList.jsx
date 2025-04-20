@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { getUserbyKeycloakId } from '../../services/userService';
 import { getCookie } from '../../services/apiClient';
 import Profile from '../user/Profile';
+import { toast } from 'react-toastify';
+import { fi } from 'date-fns/locale';
 
 function FriendsList({ friends = [], searchTerm = '', loading = false, hasMore = false, onLoadMore, onRemoveFriend,setActiveTab,
   setSelectedChatUser }) {
@@ -47,9 +49,51 @@ function FriendsList({ friends = [], searchTerm = '', loading = false, hasMore =
     // Ngăn chặn sự kiện click lan truyền đến thẻ cha
     e.stopPropagation();
     
-    if (window.confirm('Bạn có chắc chắn muốn xóa người bạn này khỏi danh sách bạn bè?')) {
-      onRemoveFriend && onRemoveFriend(friendId);
-    }
+    // Lấy tên người dùng để hiển thị trong thông báo
+    const friend = userDetails[friendId];
+    const friendName = friend 
+      ? `${friend.firstName || ''} ${friend.lastName || ''}`.trim() || 'Người dùng này'
+      : 'Người dùng này';
+    
+    // Hiển thị toast xác nhận thay vì window.confirm
+    toast.info(
+      <div className="flex flex-col">
+        <div className="font-medium">Xóa khỏi danh sách bạn bè?</div>
+        <div className="text-sm mt-1">Bạn có chắc chắn muốn xóa {friendName} khỏi danh sách bạn bè?</div>
+        <div className="flex justify-end mt-3 space-x-2">
+          <button
+            onClick={() => toast.dismiss()}
+            className="px-3 py-1 text-sm bg-gray-200 hover:bg-gray-300 text-gray-800 rounded transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-400"
+          >
+            Hủy
+          </button>
+          <button
+            onClick={() => {
+              onRemoveFriend && onRemoveFriend(friendId);
+              toast.dismiss();
+              toast.success(`Đã xóa ${friendName} khỏi danh sách bạn bè`);
+            }}
+            className="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-red-400"
+          >
+            Xác nhận
+          </button>
+        </div>
+      </div>,
+      {
+        position: "top-center",
+        autoClose: false,
+        hideProgressBar: true,
+        closeOnClick: false,
+        pauseOnHover: true,
+        draggable: false,
+        closeButton: false,
+        icon: (
+          <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7a4 4 0 11-8 0 4 4 0 018 0zM9 14a6 6 0 00-6 6v1h12v-1a6 6 0 00-6-6zM21 12h-6" />
+          </svg>
+        )
+      }
+    );
   };
   
   // Xử lý khi click vào thẻ user để chuyển đến trang message
@@ -60,7 +104,9 @@ function FriendsList({ friends = [], searchTerm = '', loading = false, hasMore =
     // Đặt người dùng được chọn để chat
     setSelectedChatUser({
       id: friendId,
-      name: `${friend.firstName || ''} ${friend.lastName || ''}`.trim() || 'Người dùng',
+      keycloakId: friend.keycloakId,
+      firstName: friend.firstName || null,
+      lastName: friend.lastName || null,
       image: friend.image || null,
     });
     

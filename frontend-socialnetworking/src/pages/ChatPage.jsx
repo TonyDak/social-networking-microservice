@@ -15,11 +15,12 @@ function ChatPage({selectedUser, connected, websocketError}) {
     const [error, setError] = useState(websocketError);
     const [chatWindowUser, setChatWindowUser] = useState(null);
     const { user } = useUser();
-    // Theo dõi subscription hiện tại để hủy khi cần
+    
     const currentGroupSubscription = useRef(null);
     const processedUserRef = useRef(null);
     const selectedConversationRef = useRef(selectedConversation);
     const messageHandlerRef = useRef(null);
+    const chatWindowUserRef = useRef(null);
 
     // Xử lý WebSocket và nhận tin nhắn
     useEffect(() => {
@@ -55,7 +56,7 @@ function ChatPage({selectedUser, connected, websocketError}) {
             // Xử lý tin nhắn với tham chiếu mới nhất
             if (currentConv && message) {
                 let isCurrentConversation = false;
-                console.log("Nhận tin nhắn:", currentConv);
+                console.log("Nhận tin nhắn:", message);
                 if (currentConv.type === 'ONE_TO_ONE') {
                     let otherUserId = null;
                     if(selectedUser){
@@ -96,7 +97,6 @@ function ChatPage({selectedUser, connected, websocketError}) {
                     }
                 }
             }
-            
             // Luôn cập nhật danh sách cuộc trò chuyện
             updateConversationWithNewMessage(message);
         };
@@ -284,7 +284,7 @@ function ChatPage({selectedUser, connected, websocketError}) {
     const updateConversationWithNewMessage = (message) => {
         console.log("Cập nhật danh sách cuộc trò chuyện với tin nhắn:", message);
         
-        setConversations(async prevConversations => {
+        setConversations(prevConversations => {
             // Chuyển đổi ID sang dạng chuỗi để so sánh chính xác
             const senderId = String(message.senderId);
             const receiverId = String(message.receiverId);
@@ -344,7 +344,7 @@ function ChatPage({selectedUser, connected, websocketError}) {
                 let userInfo = { body: { firstName: 'Người dùng', lastName: `(${otherUserId.substring(0, 8)})` } };
                 try {
                     const token = getCookie("access_token");
-                    const fetchedUser = await getUserbyKeycloakId(token, otherUserId);
+                    const fetchedUser = getUserbyKeycloakId(token, otherUserId);
                     if (fetchedUser && fetchedUser.body) {
                         userInfo = fetchedUser;
                     }
@@ -375,7 +375,6 @@ function ChatPage({selectedUser, connected, websocketError}) {
     // Xử lý khi người dùng chọn một cuộc trò chuyện
     const handleSelectConversation = async (conversation) => {
         try {
-            console.log("Chọn cuộc trò chuyện:", conversation);
             if (!conversation.users) {
                 conversation = await enrichConversationWithUsers(conversation);
             }
@@ -435,8 +434,9 @@ function ChatPage({selectedUser, connected, websocketError}) {
             chatUser = {
               id: conversation.participants[0],
               keycloakId: conversation.users.body.keycloakId,
-              name: `${conversation.users.body.firstName || ''} ${conversation.users.body.lastName || ''}`.trim(),
-              avatar: conversation.users.body.avatar
+              firstName: conversation.users.body.firstName,
+              lastName: conversation.users.body.lastName,
+              image: conversation.users.body.image
             };
           } else if (conversation.type === 'GROUP') {
             chatUser = {
@@ -446,7 +446,7 @@ function ChatPage({selectedUser, connected, websocketError}) {
               participants: conversation.users?.participants || []
             };
           }
-          
+          chatWindowUserRef.current = chatUser;
           setChatWindowUser(chatUser);
           setLoadingMessages(false);
         } catch (error) {
@@ -624,6 +624,43 @@ function ChatPage({selectedUser, connected, websocketError}) {
             return null;
         }
     };
+    const getEffectiveUser = () => {
+        // Kiểm tra chatWindowUser từ state
+        if (chatWindowUser) return chatWindowUser;
+        
+        // Kiểm tra chatWindowUserRef từ ref
+        if (chatWindowUserRef.current) return chatWindowUserRef.current;
+        
+        // Kiểm tra selectedUser từ props
+        if (selectedUser) return selectedUser;
+        
+        // Trích xuất thông tin từ selectedConversation
+        if (selectedConversation) {
+          if (selectedConversation.type === 'ONE_TO_ONE' && selectedConversation.users?.body) {
+            return {
+              id: selectedConversation.participants?.[0] || 'unknown',
+              keycloakId: selectedConversation.users.body.keycloakId || 'unknown',
+              firstName: selectedConversation.users.body.firstName || 'Người dùng',
+              lastName: selectedConversation.users.body.lastName || '',
+              image: selectedConversation.users.body.image
+            };
+          } else if (selectedConversation.type === 'GROUP') {
+            return {
+              id: selectedConversation.id || 'unknown-group',
+              name: selectedConversation.name || selectedConversation.users?.groupName || 'Nhóm không tên',
+              isGroup: true,
+              participants: selectedConversation.users?.participants || []
+            };
+          }
+        }
+        
+        // Fallback cuối cùng
+        return {
+          id: 'unknown',
+          firstName: 'Người dùng',
+          lastName: 'Không xác định'
+        };
+      };
     return (
         <div className="flex h-full">
             {/* Danh sách cuộc trò chuyện - chiếm 1/3 màn hình */}
@@ -677,12 +714,22 @@ function ChatPage({selectedUser, connected, websocketError}) {
                         loading={loadingMessages}
                         onSendMessage={handleSendMessage}
                         currentUserId={user?.keycloakId}
-                        connected={connected}
-                        selectedUser={chatWindowUser || selectedUser}
+                        selectedUser={getEffectiveUser()}
                      />
                 ) : (
                     <div className="flex items-center justify-center h-full text-gray-500">
-                        Chọn một cuộc trò chuyện để bắt đầu
+                    
+                        <div className="relative text-xl font-medium text-gray-600 animate-typing">
+                            Chọn một cuộc trò chuyện để bắt đầu
+                        </div>
+
+                        <svg 
+                            xmlns="http://www.w3.org/2000/svg" 
+                            className="h-20 w-20 text-indigo-400 icon-soft-pulse" 
+                            fill="none" 
+                            viewBox="0 0 24 24" 
+                            stroke="currentColor"
+                        />
                     </div>
                 )}
             </div>

@@ -135,14 +135,12 @@ export const rejectFriendRequest = async (receiverId, requestId) => {
  */
 export const removeFriend = async (userId, friendId) => {
   try {
-    const response = await friendClient.delete(`/${friendId}`,{},
-      {
-        headers: {
-          'X-User-ID': userId,
-          'Authorization': `Bearer ${token}`,
-        }
+    const response = await friendClient.delete(`/remove/${friendId}`, {
+      headers: {
+        'X-User-ID': userId,
+        'Authorization': `Bearer ${token}`,
       }
-    );
+    });
     return response.data;
   } catch (error) {
     console.error('Error removing friend:', error);
@@ -164,20 +162,6 @@ export const searchUsers = async (query) => {
   }
 };
 
-/**
- * Check friendship status with another user
- * @param {string} userId - Current user ID
- * @param {string} otherUserId - Other user ID
- */
-export const checkFriendshipStatus = async (userId, otherUserId) => {
-  try {
-    const response = await friendClient.get(`/status/${userId}/${otherUserId}`);
-    return response.data;
-  } catch (error) {
-    console.error('Error checking friendship status:', error);
-    throw error;
-  }
-};
 export const checkMultipleFriendshipStatus = async (userId, otherUserIds) => {
     try {
       const response = await friendClient.post(`/status/batch`, {
@@ -190,3 +174,18 @@ export const checkMultipleFriendshipStatus = async (userId, otherUserIds) => {
       throw error;
     }
   };
+
+export const checkFriendship = async (userId, targetId) => {
+  try {
+    const response = await friendClient.get(`/areFriends/${targetId}`, {
+      headers: {
+        'X-User-ID': userId,
+        'Authorization': `Bearer ${token}`,
+      }
+    });
+    return { isFriend: response.data };
+  } catch (error) {
+    console.error('Error checking friendship status:', error);
+    return { isFriend: false };
+  }
+}; 

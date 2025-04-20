@@ -13,6 +13,10 @@ import { UserProvider, useUser } from './contexts/UserContext';
 import FriendsPage from './pages/FriendsPage';
 import chatService from './services/chatService';
 import { getCookie } from './services/apiClient';
+import { useNavigate } from 'react-router-dom';
+import { CallProvider } from './contexts/CallContext';
+import IncomingCallDialog from './components/call/IncomingCallDialog';
+import CallInterface from './components/call/CallInterface';
 
 // Yêu cầu đăng nhập để truy cập
 const ProtectedRoute = ({ children }) => {
@@ -24,8 +28,26 @@ const ProtectedRoute = ({ children }) => {
 // Chuyển hướng về trang chủ nếu đã đăng nhập
 const PublicRoute = ({ children }) => {
     const { user, loading } = useUser();
+    const [redirecting, setRedirecting] = useState(false);
+    const navigate = useNavigate();
+
+    useEffect(() => {
+        if (user && !loading) {
+            setRedirecting(true);
+            
+            // Thêm độ trễ 1 giây trước khi chuyển hướng
+            const timer = setTimeout(() => {
+                navigate('/');
+            }, 2000);
+            
+            return () => clearTimeout(timer);
+        }
+    }, [user, loading, navigate]);
+
     if (loading) return <div className="flex justify-center items-center h-screen">Đang tải...</div>;
-    return user ? <Navigate to="/" /> : children;
+    if (redirecting) return <div className="flex justify-center items-center h-screen">Đang chuyển hướng...</div>;
+    
+    return children;
 };
 
 function App() {
@@ -34,34 +56,31 @@ function App() {
     const [websocketConnected, setWebsocketConnected] = useState(false); // Thêm state cho trạng thái kết nối
     const [websocketError, setWebsocketError] = useState(null); // Thêm state cho lỗi kết nối
     const { user } = useUser(); // Lấy thông tin user
-    
-    const ChatLayout = () => {
-        // Kết nối WebSocket khi vào Layout
-        useEffect(() => {
-            if (user) {
-                const token = getCookie('access_token');
-                
-                // Kết nối đến WebSocket server
-                chatService.connect(
-                    token,
-                    user.keycloakId,
-                    () => {
-                        console.log('Đã kết nối đến dịch vụ chat');
-                        setWebsocketConnected(true);
-                    },
-                    (error) => {
-                        console.error('Lỗi kết nối đến dịch vụ chat:', error);
-                        setWebsocketError(error);
-                    }
-                );
-            }
+    useEffect(() => {
+        if (user) {
+            const token = getCookie('access_token');
             
-            // Cleanup khi unmount component
-            return () => {
-                chatService.disconnect();
-            };
-        }, [user]); // Chỉ chạy lại khi user thay đổi
+            // Kết nối đến WebSocket server
+            chatService.connect(
+                token,
+                user.keycloakId,
+                () => {
+                    console.log('Đã kết nối đến dịch vụ chat');
+                    setWebsocketConnected(true);
+                },
+                (error) => {
+                    console.error('Lỗi kết nối đến dịch vụ chat:', error);
+                    setWebsocketError(error);
+                }
+            );
+        }
         
+        // Cleanup khi unmount component
+        return () => {
+            chatService.disconnect();
+        };
+    }, [user]);
+    const ChatLayout = () => {
         return (
             <div className="flex h-screen">
                 <Sidebar activeTab={activeView} setActiveTab={setActiveView} />
@@ -81,6 +100,7 @@ function App() {
                     )}
                 </main>
             </div>
+            
         );
     };
     
@@ -107,7 +127,11 @@ function App() {
             {/* Main app route */}
             <Route path="/" element={
                 <ProtectedRoute>
-                    <ChatLayout />
+                    <CallProvider>
+                        <ChatLayout />
+                        <IncomingCallDialog />
+                        <CallInterface /> 
+                    </CallProvider>                  
                 </ProtectedRoute>
             } />
             {/* Add more routes as needed */}

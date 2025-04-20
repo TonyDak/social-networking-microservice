@@ -149,7 +149,8 @@ function ConversationList({
 
       // Sau đó sắp xếp theo thời gian gần nhất
       return new Date(b.lastActivity || 0) - new Date(a.lastActivity || 0);
-    });
+    }
+  );
 
   const formatTime = (date) => {
     return formatDistanceToNow(new Date(date), { addSuffix: true, locale: vi });
@@ -237,9 +238,12 @@ function ConversationList({
                     </p>
                   </div>
                   {conversation.unreadCount > 0 && (
-                    <span className="inline-flex items-center justify-center w-5 h-5 ml-2 text-xs font-medium text-white bg-indigo-600 rounded-full">
-                      {conversation.unreadCount}
-                    </span>
+                    <div className="relative ml-2">
+                      <span className="flex h-3 w-3 relative">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-indigo-600"></span>
+                      </span>
+                    </div>
                   )}
                 </div>
               </li>
