@@ -186,7 +186,7 @@ public class ChatService {
      * Quản lý nhóm chat
      */
     @Transactional
-    @CacheEvict(value = { "conversationMessages", "userConversations" }, allEntries = true)
+    @CacheEvict(value = { "conversationMessages", "userConversations", "groupConversations" }, allEntries = true)
     public Conversation createGroupConversation(String name, String creatorId, List<String> participantIds) {
         if (!participantIds.contains(creatorId)) {
             participantIds.add(creatorId);
@@ -359,7 +359,7 @@ public class ChatService {
      * Xóa nhóm chat đồng thời xóa tất cả tin nhắn liên quan
      */
     @Transactional
-    @CacheEvict(value = { "conversationMessages", "userConversations" }, allEntries = true)
+    @CacheEvict(value = { "conversationMessages", "userConversations", "groupConversations" }, allEntries = true)
     public void deleteGroupConversation(String conversationId) {
         Conversation conversation = conversationRepository.findById(conversationId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy nhóm chat"));
