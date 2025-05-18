@@ -3,7 +3,8 @@ import { getFriendsList } from '../../services/friendService';
 import { useUser } from '../../contexts/UserContext';
 import { toast } from 'react-toastify';
 import chatService from '../../services/chatService';
-
+import { getUserbyKeycloakId } from '../../services/userService';
+import { getCookie } from '../../services/apiClient';
 
 function CreateGroupDialog({ isOpen, onClose }) {
   const [groupName, setGroupName] = useState('');
@@ -13,20 +14,38 @@ function CreateGroupDialog({ isOpen, onClose }) {
   const [loading, setLoading] = useState(false);
   const [creatingGroup, setCreatingGroup] = useState(false);
   const { user } = useUser();
+  const token = getCookie('access_token');
 
   // Tải danh sách bạn bè khi dialog mở
   useEffect(() => {
-    if (isOpen && user?.id) {
+    if (isOpen && user?.keycloakId) {
       loadFriends();
     }
-  }, [isOpen, user?.id]);
+  }, [isOpen, user?.keycloakId]);
 
   // Tải danh sách bạn bè
   const loadFriends = async () => {
     try {
       setLoading(true);
-      const data = await getFriendsList(user.id);
-      setFriends(data);
+      const data = await getFriendsList(user.keycloakId);
+      const details = {};
+            
+      try {
+        // Tạo mảng các promises để tải song song
+        const promises = data.map(async (friend) => {
+          try {
+            const response = await getUserbyKeycloakId(token, friend.friendId);
+            details[friend.friendId] = response.body;
+          } catch (error) {
+            console.error(`Error fetching user data for ${friend.friendId}:`, error);
+          }
+        });
+        
+        await Promise.all(promises);
+        setFriends(Object.values(details));
+      } catch (error) {
+        console.error('Error fetching user details:', error);
+      }
     } catch (error) {
       console.error('Lỗi tải danh sách bạn bè:', error);
       toast.error('Không thể tải danh sách bạn bè');
@@ -43,13 +62,24 @@ function CreateGroupDialog({ isOpen, onClose }) {
 
   // Chọn/bỏ chọn bạn bè
   const toggleSelectFriend = (friend) => {
-    if (selectedFriends.some(f => f.id === friend.id)) {
-      setSelectedFriends(selectedFriends.filter(f => f.id !== friend.id));
-    } else {
-      setSelectedFriends([...selectedFriends, friend]);
-    }
+    const friendId = friend.keycloakId || friend.id; // Ưu tiên dùng keycloakId
+    
+    setSelectedFriends(prevSelectedFriends => {
+      const isSelected = prevSelectedFriends.some(f => (f.keycloakId || f.id) === friendId);
+      
+      if (isSelected) {
+        // Nếu đã chọn, loại bỏ khỏi danh sách đã chọn
+        return prevSelectedFriends.filter(f => (f.keycloakId || f.id) !== friendId);
+      } else {
+        // Nếu chưa chọn, thêm vào danh sách đã chọn
+        return [...prevSelectedFriends, friend];
+      }
+    });
   };
-
+  const isSelected = (friend) => {
+    const friendId = friend.keycloakId || friend.id;
+    return selectedFriends.some(f => (f.keycloakId || f.id) === friendId);
+  };
   // Tạo nhóm
   const handleCreateGroup = async () => {
     if (!groupName.trim()) {
@@ -67,8 +97,7 @@ function CreateGroupDialog({ isOpen, onClose }) {
       
       const groupData = {
         name: groupName.trim(),
-        creatorId: user.id,
-        participantIds: [user.id, ...selectedFriends.map(f => f.id)]
+        participantIds: [user.keycloakId, ...selectedFriends.map(f => f.keycloakId)]
       };
       
       await chatService.createGroupConversation(groupData);
@@ -153,7 +182,7 @@ function CreateGroupDialog({ isOpen, onClose }) {
             <div className="flex flex-wrap gap-2">
               {selectedFriends.map(friend => (
                 <div 
-                  key={friend.id} 
+                  key={friend.keycloakId || friend.id} 
                   className="bg-indigo-100 text-indigo-800 text-sm px-3 py-1 rounded-full flex items-center"
                 >
                   <span className="mr-1">{friend.firstName} {friend.lastName}</span>
@@ -207,11 +236,11 @@ function CreateGroupDialog({ isOpen, onClose }) {
                     </div>
                     <div className="ml-2">
                       <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                        selectedFriends.some(f => f.id === friend.id)
+                        isSelected(friend) // Thay vì selectedFriends.some(f => f.id === friend.id)
                           ? 'bg-indigo-500 text-white'
                           : 'border-2 border-gray-300'
                       }`}>
-                        {selectedFriends.some(f => f.id === friend.id) && (
+                        {isSelected(friend) && ( // Thay vì selectedFriends.some(f => f.id === friend.id) 
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                             <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                           </svg>

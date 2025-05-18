@@ -98,7 +98,6 @@ class ChatService {
                 }
                 
               });
-              
               // Bắt đầu gửi ping để giữ kết nối
               this.startPing();
               
@@ -311,34 +310,102 @@ class ChatService {
 
 
   /**
-   * Đăng ký nhận tin nhắn nhóm
-   * @param {string} conversationId - ID của cuộc trò chuyện nhóm
-   * @param {function} callback - Hàm xử lý khi có tin nhắn đến
-   * @returns {boolean} - Trạng thái đăng ký thành công hay không
-   */
+ * Đăng ký nhận tin nhắn nhóm
+ * @param {string} conversationId - ID của cuộc trò chuyện nhóm
+ * @param {function} callback - Hàm xử lý khi có tin nhắn đến
+ * @returns {Object|boolean} - Subscription object hoặc false nếu thất bại
+ */
   subscribeToGroupMessages(conversationId, callback) {
-    if (!this.connected) return false;
+    if (!this.connected || !this.stompClient) {
+      console.error('WebSocket chưa kết nối hoặc stompClient chưa sẵn sàng');
+      return false;
+    }
     
-    // Địa chỉ nhận tin nhắn nhóm theo định dạng /topic/group/{conversationId}
-    const destination = `/topic/group/${conversationId}`;
-    const subscription = this.stompClient.subscribe(destination, (message) => {
-      const messageData = JSON.parse(message.body);
-      callback(messageData);
-    });
-    
-    this.subscriptions.set(destination, subscription);
-    return true;
+    try {
+      console.log(`Đang đăng ký kênh nhóm cho conversationId: ${conversationId}`);
+      
+      // Đảm bảo destination đúng với cấu hình backend
+      const destination = `/topic/group/${conversationId}`;
+      
+      console.log(`Đăng ký kênh nhóm: ${destination}`);
+      
+      // Thêm debug headers
+      const headers = {
+        'Authorization': `Bearer ${this.authToken}`,
+        'X-User-Id': this.currentUserId,
+        'X-Group-Id': conversationId
+      };
+      
+      // Đảm bảo đã xóa subscription cũ trước khi tạo mới
+      if (this.subscriptions.has(destination)) {
+        const oldSub = this.subscriptions.get(destination);
+        if (oldSub && oldSub.unsubscribe) {
+          console.log(`Hủy đăng ký kênh nhóm cũ: ${destination}`);
+          oldSub.unsubscribe();
+        }
+        this.subscriptions.delete(destination);
+      }
+      
+      // Đăng ký với thêm debug
+      const subscription = this.stompClient.subscribe(destination, (message) => {
+        console.log(`===== NHẬN TIN NHẮN NHÓM WEBSOCKET (${conversationId}) =====`);
+        try {
+          const messageData = JSON.parse(message.body);
+          callback(messageData);
+
+          // Chỉ broadcast nếu callback khác với messageCallbacks.get('group')
+          if (this.messageCallbacks.has('group') && callback !== this.messageCallbacks.get('group')) {
+            this.messageCallbacks.get('group')(messageData);
+          }
+        } catch (e) {
+          console.error('Lỗi khi xử lý tin nhắn nhóm:', e);
+        }
+      }, headers);
+      
+      this.subscriptions.set(destination, subscription);
+      console.log(`Đã đăng ký thành công kênh nhóm ${destination}, ID subscription: ${subscription.id}`);
+      
+      return subscription;
+    } catch (e) {
+      console.error(`Lỗi khi đăng ký kênh nhận tin nhắn nhóm:`, e);
+      return false;
+    }
   }
 
+  /**
+ * Lấy danh sách người tham gia trong nhóm
+ * @param {string} conversationId - ID cuộc trò chuyện nhóm
+ * @returns {Promise<Array>} - Danh sách người tham gia
+ */
+  async getGroupParticipants(conversationId) {
+    const response = await chatClient.get(`/group/${conversationId}/members`, {
+      headers: {
+        Authorization: `Bearer ${this.authToken}`
+      }
+    });
+    return response.data;
+  }
 
   /**
    * Đăng ký callback cho các loại tin nhắn
-   * @param {string} type - Loại tin nhắn (private, group, etc.)
+   * @param {string} topic - Loại tin nhắn (private, group, etc.)
    * @param {function} callback - Hàm xử lý
    */
-  onMessage(type, callback) {
-    console.log(`Đăng ký callback cho ${type}`);
-    this.messageCallbacks.set(type, callback);
+  onMessage(topic, callback) {
+    if (!this.messageCallbacks) {
+        this.messageCallbacks = new Map();
+    }
+    
+    console.log(`Đăng ký nhận tin nhắn ${topic}`);
+    this.messageCallbacks.set(topic, callback);
+    
+    // Nếu đang kết nối, đảm bảo đăng ký đúng cách
+    if (this.stompClient && this.connected) {
+        if (topic === 'group') {
+            // Đảm bảo đã subscribe vào destination đúng
+            this.subscribeToGroupMessages();
+        }
+    }
   }
 
 
@@ -408,7 +475,7 @@ class ChatService {
  * @param {string} content - Nội dung tin nhắn
  * @returns {Promise<Object>} - Thông tin tin nhắn đã gửi
  */
-async sendPrivateMessage(receiverId, content) {
+async sendPrivateMessage(receiverId, content, options = {}) {
   if (!this.connected || !this.currentUserId) {
     throw new Error('Chưa kết nối đến máy chủ chat');
   }
@@ -420,10 +487,10 @@ async sendPrivateMessage(receiverId, content) {
       receiverId: receiverId,
       content: content,
       timestamp: new Date().toISOString(),
-      type: 'ONE_TO_ONE'
+      type: options.type || 'text', // Sửa: gửi đúng type
+      fileName: options.fileName    // Sửa: gửi fileName nếu có
     };
     
-    // Gửi qua websocket
     this.stompClient.publish({
       destination: destination,
       body: JSON.stringify(message),
@@ -448,7 +515,7 @@ async sendPrivateMessage(receiverId, content) {
  * @param {string} content - Nội dung tin nhắn
  * @returns {Promise<Object>} - Thông tin tin nhắn đã gửi
  */
-async sendGroupMessage(conversationId, content) {
+async sendGroupMessage(conversationId, content, options = {}) {
   if (!this.connected || !this.currentUserId) {
     throw new Error('Chưa kết nối đến máy chủ chat');
   }
@@ -460,7 +527,8 @@ async sendGroupMessage(conversationId, content) {
       conversationId: conversationId,
       content: content,
       timestamp: new Date().toISOString(),
-      type: 'GROUP'
+      type: options.type || 'text', // Sửa: gửi đúng type
+      fileName: options.fileName    // Sửa: gửi fileName nếu có
     };
     
     // Gửi qua websocket
@@ -505,8 +573,8 @@ async sendGroupMessage(conversationId, content) {
    * @param {string} conversationId - ID cuộc trò chuyện
    * @returns {Promise<Array>} - Danh sách tin nhắn trong cuộc trò chuyện
    */
-  async getConversationMessages(conversationId) {
-    const response = await chatClient.get(`/messages/${conversationId}`,
+  async getConversationMessages(conversationId, page = 0, size = 20) {
+    const response = await chatClient.get(`/messages/${conversationId}?page=${page}&size=${size}`,
       {
         headers: {
           Authorization: `Bearer ${this.authToken}`
@@ -556,7 +624,14 @@ async sendGroupMessage(conversationId, content) {
    * @returns {Promise<Object>} - Thông tin cập nhật
    */
   async markMessageAsRead(messageId) {
-    const response = await chatClient.put(`/messages/${messageId}/read`);
+    const response = await chatClient.put(`/messages/${messageId}/read`,
+      {
+        headers: {
+          Authorization: `Bearer ${this.authToken}`
+        }
+      }
+    );
+
     return response.data;
   }
 
@@ -566,7 +641,13 @@ async sendGroupMessage(conversationId, content) {
    * @returns {Promise<Array>} - Danh sách tin nhắn chưa đọc
    */
   async getUnreadMessages(userId) {
-    const response = await chatClient.get(`/unread/${userId}`);
+    const response = await chatClient.get(`/unread/${userId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${this.authToken}`
+        }
+      }
+    );
     return response.data;
   }
 
@@ -588,7 +669,29 @@ async sendGroupMessage(conversationId, content) {
    * @returns {Promise<Object>} - Thông tin cuộc trò chuyện nhóm đã tạo
    */
   async createGroupConversation(name, participants) {
-    const response = await chatClient.post(`/group`, { name, participants });
+    const response = await chatClient.post(`/group`, { name, participants },
+      {
+        headers: {
+          Authorization: `Bearer ${this.authToken}`
+        }
+      }
+    );
+    return response.data;
+  }
+
+  /**
+   * Lấy thông tin cuộc trò chuyện nhóm
+   * @returns {Promise<Object>} - Thông tin cuộc trò chuyện nhóm
+   */
+  async getGroupConversation() {
+    const response = await chatClient.get(`/conversations/group`,
+      {
+        headers: {
+          'Authorization': `Bearer ${this.authToken}`,
+          'X-User-Id': this.currentUserId
+        }
+      }
+    );
     return response.data;
   }
 
@@ -598,8 +701,14 @@ async sendGroupMessage(conversationId, content) {
    * @param {Array<string>} members - Danh sách ID người dùng cần thêm
    * @returns {Promise<Object>} - Thông tin cập nhật 
    */
-  async addMembersToGroup(conversationId, members) {
-    const response = await chatClient.post(`/${conversationId}/members`, { members });
+  async addMembersToGroup(conversationId, members, fullName) {
+    const response = await chatClient.post(`/${conversationId}/members`, { members, fullName },
+      {
+        headers: {
+          Authorization: `Bearer ${this.authToken}`
+        }
+      }
+    );
     return response.data;
   }
 
@@ -609,8 +718,14 @@ async sendGroupMessage(conversationId, content) {
    * @param {string} memberId - ID thành viên cần xóa
    * @returns {Promise<Object>} - Thông tin cập nhật
    */
-  async removeMemberFromGroup(conversationId, memberId) {
-    const response = await chatClient.delete(`/${conversationId}/members/${memberId}`);
+  async removeMemberFromGroup(conversationId, members, fullName) {
+    const response = await chatClient.post(`/${conversationId}/remove_members`, { members, fullName },
+      {
+        headers: {
+          Authorization: `Bearer ${this.authToken}`
+        }
+      }
+    );
     return response.data;
   }
 
@@ -620,7 +735,12 @@ async sendGroupMessage(conversationId, content) {
    * @returns {Promise<Object>} - Thông tin cập nhật
    */
   async joinGroup(conversationId) {
-    const response = await chatClient.post(`/${conversationId}/join`);
+    const response = await chatClient.post(`/${conversationId}/join`,
+      {
+        headers: {
+          Authorization: `Bearer ${this.authToken}`
+        }
+      });
     return response.data;
   }
 
@@ -667,96 +787,27 @@ async sendGroupMessage(conversationId, content) {
         }
       });
     return response.data;
-  }
-
-  subscribeToCallNotifications(userId, callback) {
-    if (!this.connected || !this.stompClient) {
-      console.error('WebSocket chưa kết nối');
-      return false;
     }
-    
+    /**
+   * Xóa nhóm chat đồng thời xóa các tin nhắn liên quan
+   * @param {string} conversationId - ID của cuộc trò chuyện nhóm
+   * @return {Promise<void>}
+   */
+  async deleteGroupChat(conversationId) {
     try {
-      // Đường dẫn đến kênh cuộc gọi
-      const destination = `/user/${userId}/queue/calls`;
-      
-      // Hủy đăng ký cũ nếu có
-      if (this.subscriptions.has(destination)) {
-        const oldSub = this.subscriptions.get(destination);
-        if (oldSub && oldSub.unsubscribe) {
-          oldSub.unsubscribe();
+      await chatClient.delete(`/${conversationId}/delete`, {
+        headers: {
+          Authorization: `Bearer ${this.authToken}`
         }
-        this.subscriptions.delete(destination);
-      }
-      
-      console.log(`Đăng ký kênh cuộc gọi: ${destination}`);
-      
-      // Đăng ký với STOMP client
-      const subscription = this.stompClient.subscribe(destination, (message) => {
-        console.log(`Nhận thông báo cuộc gọi:`, message);
-        try {
-          const messageData = JSON.parse(message.body);
-          callback(messageData);
-        } catch (e) {
-          console.error('Lỗi xử lý thông báo cuộc gọi:', e);
-        }
-      }, {
-        'Authorization': `Bearer ${this.authToken}`,
-        'X-User-Id': userId
       });
-      
-      this.subscriptions.set(destination, subscription);
-      return subscription;
-    } catch (e) {
-      console.error('Lỗi khi đăng ký kênh cuộc gọi:', e);
-      return false;
-    }
-  }
-  
-  // Tương tự cho kênh tín hiệu WebRTC
-  subscribeToSignalChannel(userId, callback) {
-    // Tương tự code trên nhưng dùng `/user/${userId}/queue/signals`
-    if (!this.connected || !this.stompClient) {
-      console.error('WebSocket chưa kết nối');
-      return false;
-    }
-    
-    try {
-      // Đường dẫn đến kênh cuộc gọi
-      const destination = `/user/${userId}/queue/signals`;
-      
-      // Hủy đăng ký cũ nếu có
-      if (this.subscriptions.has(destination)) {
-        const oldSub = this.subscriptions.get(destination);
-        if (oldSub && oldSub.unsubscribe) {
-          oldSub.unsubscribe();
-        }
-        this.subscriptions.delete(destination);
-      }
-      
-      console.log(`Đăng ký kênh cuộc gọi: ${destination}`);
-      
-      // Đăng ký với STOMP client
-      const subscription = this.stompClient.subscribe(destination, (message) => {
-        console.log(`Nhận thông báo cuộc gọi:`, message);
-        try {
-          const messageData = JSON.parse(message.body);
-          callback(messageData);
-        } catch (e) {
-          console.error('Lỗi xử lý thông báo cuộc gọi:', e);
-        }
-      }, {
-        'Authorization': `Bearer ${this.authToken}`,
-        'X-User-Id': userId
-      });
-      
-      this.subscriptions.set(destination, subscription);
-      return subscription;
-    } catch (e) {
-      console.error('Lỗi khi đăng ký kênh cuộc gọi:', e);
-      return false;
+      console.log(`Đã xóa nhóm chat với ID: ${conversationId}`);
+    } catch (error) {
+      console.error(`Lỗi khi xóa nhóm chat:`, error);
+      throw error;
     }
   }
 }
+
 
 // Tạo instance duy nhất để sử dụng trong toàn ứng dụng
 const chatService = new ChatService();

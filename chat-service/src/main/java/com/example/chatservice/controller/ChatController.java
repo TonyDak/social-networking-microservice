@@ -27,8 +27,10 @@ public class ChatController {
 
     @GetMapping("/messages/{conversationId}")
     public ResponseEntity<List<ChatMessage>> getMessagesByConversationId(
-            @PathVariable String conversationId) {
-        return ResponseEntity.ok(chatService.getMessagesByConversationId(conversationId));
+            @PathVariable String conversationId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ResponseEntity.ok(chatService.getMessagesByConversationId(conversationId, page, size));
     }
 
     @GetMapping("/recent/{userId}")

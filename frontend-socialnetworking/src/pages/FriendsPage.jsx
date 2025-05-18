@@ -88,7 +88,7 @@ function FriendsPage({ setActiveTab, setSelectedChatUser }) {
       
       try {
         setLoadingGroups(true);
-        const data = await chatService.getUserConversations(user.keycloakId);
+        const data = await chatService.getGroupConversation();
         setGroups(data);
       } catch (err) {
         console.error("Error loading groups:", err);

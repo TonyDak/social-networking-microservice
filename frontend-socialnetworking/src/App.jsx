@@ -14,9 +14,7 @@ import FriendsPage from './pages/FriendsPage';
 import chatService from './services/chatService';
 import { getCookie } from './services/apiClient';
 import { useNavigate } from 'react-router-dom';
-import { CallProvider } from './contexts/CallContext';
-import IncomingCallDialog from './components/call/IncomingCallDialog';
-import CallInterface from './components/call/CallInterface';
+import Chatbot from './components/chatbot/Chatbot';
 
 // Yêu cầu đăng nhập để truy cập
 const ProtectedRoute = ({ children }) => {
@@ -86,18 +84,20 @@ function App() {
                 <Sidebar activeTab={activeView} setActiveTab={setActiveView} />
                 <main className="flex-1 overflow-auto">
                     {activeView === 'messages' ? (
-                        <ChatPage 
-                            selectedUser={selectedChatUser} 
-                            connected={websocketConnected} 
-                            websocketError={websocketError}
-                        />
-                    ) : (
-                        <FriendsPage 
-                            setActiveTab={setActiveView} 
-                            setSelectedChatUser={setSelectedChatUser}
-                            connected={websocketConnected}
-                        />
-                    )}
+                    <ChatPage 
+                        selectedUser={selectedChatUser} 
+                        connected={websocketConnected} 
+                        websocketError={websocketError}
+                    />
+                ) : activeView === 'contacts' ? (
+                    <FriendsPage 
+                        setActiveTab={setActiveView} 
+                        setSelectedChatUser={setSelectedChatUser}
+                        connected={websocketConnected}
+                    />
+                ) : activeView === 'chatbot' ? (
+                    <Chatbot />
+                ) : null}
                 </main>
             </div>
             
@@ -127,11 +127,7 @@ function App() {
             {/* Main app route */}
             <Route path="/" element={
                 <ProtectedRoute>
-                    <CallProvider>
-                        <ChatLayout />
-                        <IncomingCallDialog />
-                        <CallInterface /> 
-                    </CallProvider>                  
+                    <ChatLayout />                 
                 </ProtectedRoute>
             } />
             {/* Add more routes as needed */}

@@ -167,6 +167,29 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
             <span className="absolute left-0 w-1 h-8 bg-indigo-500 rounded-r-full"></span>
           )}
         </button>
+        <button
+          className={`w-12 h-12 rounded-lg flex items-center justify-center transition-all duration-200 relative ${
+            activeTab === 'chatbot'
+              ? 'bg-indigo-100 text-indigo-700 shadow-sm'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveTab('chatbot')}
+          title="Chatbot AI"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <g>
+              <rect x="4" y="7" width="16" height="10" rx="5" fill="currentColor" opacity="0.15"/>
+              <rect x="4" y="7" width="16" height="10" rx="5" stroke="currentColor" strokeWidth="1.5"/>
+              <circle cx="8.5" cy="12" r="1" fill="currentColor"/>
+              <circle cx="15.5" cy="12" r="1" fill="currentColor"/>
+              <rect x="10" y="15" width="4" height="1" rx="0.5" fill="currentColor"/>
+              <path d="M12 7V5M7 7V5M17 7V5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+            </g>
+          </svg>
+          {activeTab === 'chatbot' && (
+            <span className="absolute left-0 w-1 h-8 bg-indigo-500 rounded-r-full"></span>
+          )}
+        </button>
       </div>
       {/* Profile Modal */}
       {showProfileModal && (

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../../contexts/UserContext';
 import { logout } from '../../services/authService';
+import { uploadFileToCloudinary } from '../../services/apiClient';
 
 const ProfileUpdate = ({ onCancelClick, isRequiredUpdate = false, onUpdateSuccess  }) => {
   const { user, updateUser, loading: userLoading, error: userError } = useUser();
@@ -133,11 +134,11 @@ const ProfileUpdate = ({ onCancelClick, isRequiredUpdate = false, onUpdateSucces
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!validateForm()) {
       return;
     }
-    
+
     setLoading(true);
     setError(null);
     try {
@@ -149,34 +150,24 @@ const ProfileUpdate = ({ onCancelClick, isRequiredUpdate = false, onUpdateSucces
         phoneNumber: formData.phoneNumber.trim(),
         bio: formData.bio ? formData.bio.trim() : ''
       };
-      
-      // Xử lý ngày sinh - chuyển từ định dạng yyyy-MM-dd sang định dạng phù hợp cho API
+
+      // Xử lý ngày sinh
       if (formData.dateOfBirth) {
         const parts = formData.dateOfBirth.split('-');
         if (parts.length === 3) {
-          // Format thành yyyy/MM/dd hoặc định dạng mà API yêu cầu
           userData.dateOfBirth = `${parts[2]}/${parts[1]}/${parts[0]}`
         }
       }
-  
-      // Tạo FormData để gửi lên server
-      const submitData = new FormData();
-      
-      // Thêm tất cả các trường dữ liệu vào FormData
-      Object.entries(userData).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) {
-          submitData.append(key, value);
-        }
-      });
-      
-      // Thêm file ảnh nếu có
+
+      // Nếu có ảnh mới, upload lên Cloudinary trước
       if (formData.image) {
-        submitData.append('image', formData.image);
+        const imageUrl = await uploadFileToCloudinary(formData.image);
+        userData.image = imageUrl;
       }
-      
-      // Gọi API cập nhật người dùng
-      await updateUser(submitData);
-      
+
+      // Gọi API cập nhật người dùng (không cần FormData nữa)
+      await updateUser(userData);
+
       if (onUpdateSuccess) {
         onUpdateSuccess();
       } else if (isInModal) {
@@ -184,12 +175,12 @@ const ProfileUpdate = ({ onCancelClick, isRequiredUpdate = false, onUpdateSucces
       } else {
         navigate('/');
       }
-  
+
     } catch (err) {
       setError('Không thể cập nhật thông tin người dùng');
       console.error(err);
       setLoading(false);
-    } 
+    }
   };
 
   if (userLoading) return <div className="flex justify-center items-center h-screen">Đang tải...</div>;

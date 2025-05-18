@@ -45,3 +45,17 @@ export const isValidEmail = (email) => {
     const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return regex.test(email);
 };
+
+export const uploadFileToCloudinary = async (file) => {
+  let endpoint = "raw";
+  if (file.type.startsWith("image/")) endpoint = "image";
+  else if (file.type.startsWith("video/")) endpoint = "video";
+
+  const url = `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/${endpoint}/upload`;
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
+
+  const response = await axios.post(url, formData);
+  return response.data.secure_url; // URL file public
+};

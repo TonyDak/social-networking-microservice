@@ -12,7 +12,11 @@ import java.util.Optional;
 public interface ConversationRepository extends MongoRepository<Conversation, String> {
     List<Conversation> findByParticipantsContaining(String userId);
 
+    List<Conversation> findByParticipantsContainingAndType(String userId, String type);
+
     // Thay thế phương thức hiện tại với một truy vấn tùy chỉnh
     @Query("{ 'type': ?0, 'participants': { $all: [?1, ?2] } }")
     Optional<Conversation> findByTypeAndBothParticipants(String type, String participant1, String participant2);
+
+
 }

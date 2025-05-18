@@ -109,7 +109,6 @@ function FriendsList({ friends = [], searchTerm = '', loading = false, hasMore =
       lastName: friend.lastName || null,
       image: friend.image || null,
     });
-    
     // Chuyển đổi tab sang messages
     setActiveTab('messages');
   };

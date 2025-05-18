@@ -35,4 +35,6 @@ public class UserController {
     public ResponseEntity<?> getUserById(@PathVariable String userId) {
         return ResponseEntity.ok(userService.findUserbyKeycloakId(userId));
     }
+
+
 }

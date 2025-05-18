@@ -4,16 +4,28 @@ import chatService from '../../services/chatService';
 import { getUserbyKeycloakId } from '../../services/userService';
 import Profile from '../user/Profile';
 import { getCookie } from '../../services/apiClient';
-import CallButton from '../call/CallButton';
-
+import UserSearchModal from './UserSearchModal';
+import { useUser } from '../../contexts/UserContext';
+import GroupProfile from '../user/GroupProfile';
+import { sendFriendRequest } from "../../services/friendService";
+import { toast } from 'react-toastify';
 
 function ChatHeader({ 
   conversation,
   selectedUser,
   isFriend = false,
-  onSendFriendRequest
+  onSendFriendRequest,
+  hasOnlineMember = false,
+  onlineMembers = 0,
+  onAddMember,
+  onRemoveMember = () => { console.warn('onRemoveMember not implemented'); }
 }) {
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [showRemoveMemberModal, setShowRemoveMemberModal] = useState(false);
+  const [showDisbandModal, setShowDisbandModal] = useState(false);
+  const [viewingGroup, setViewingGroup] = useState(false);
+  const { user } = useUser();
   const token = getCookie('access_token');
   // State để lưu trạng thái online từ API
   const [recipientStatus, setRecipientStatus] = useState({
@@ -79,6 +91,7 @@ function ChatHeader({
 
   // Kiểm tra xem conversation và type có tồn tại
   const isGroup = conversation?.type === 'GROUP';
+  const isGroupCreator = isGroup && user && conversation?.creatorId === user.keycloakId;
   
   // --------- XỬ LÝ THÔNG TIN HIỂN THỊ ---------
   // 1. Ưu tiên dùng selectedUser (khi chat 1-1)
@@ -131,9 +144,11 @@ function ChatHeader({
   let onlineCount = 0;
   
   if (isGroup && conversation) {
-    // Với nhóm, vẫn dùng onlineUsers từ props (hoặc có thể gọi API riêng cho nhóm)
+    // Với nhóm chat, sử dụng hasOnlineMember từ props
+    isRecipientOnline = hasOnlineMember;
     
-    isRecipientOnline = onlineCount > 0;
+    // onlineCount sẽ là số lượng thành viên online
+    onlineCount = onlineMembers || 0; 
   }
   
   // Format thời gian hoạt động gần nhất - giữ nguyên code hiện tại
@@ -166,16 +181,67 @@ function ChatHeader({
     }
   }; 
   // Xử lý khi click vào nút xem thông tin
-  const handleViewProfile = (friendId, e) => {
-    // Ngăn chặn sự kiện click lan truyền đến thẻ cha
+  const handleViewProfile = (id, e) => {
     e.stopPropagation();
-    setShowProfileModal(true);
+    if (isGroup) {
+      setViewingGroup(true);
+      setShowProfileModal(true);
+    } else {
+      setViewingGroup(false);
+      setShowProfileModal(true);
+    }
   };
   
   // Đóng modal profile
   const handleCloseProfileModal = () => {
     setShowProfileModal(false);
   };
+  const handleOpenAddMemberModal = (e) => {
+    e.stopPropagation();
+    setShowAddMemberModal(true);
+  };
+
+  const handleSendFriendRequestInfo = async (targetId) => {
+    try {
+      await sendFriendRequest(user.keycloakId, targetId);
+      // Có thể cập nhật lại trạng thái hoặc hiển thị thông báo thành công
+      toast.success("Đã gửi lời mời kết bạn!");
+    } catch (err) {
+      toast.error("Gửi lời mời kết bạn thất bại!");
+    }
+  };
+
+  // Xử lý khi người dùng chọn thành viên để thêm vào nhóm
+  const handleAddMember = (selectedUsers) => {
+    if (onAddMember && selectedUsers && selectedUsers.length > 0) {
+      // Chuyển danh sách user đã chọn thành danh sách keycloakIds
+      const memberIds = selectedUsers.map(user => user.keycloakId);
+      onAddMember(conversation.id, memberIds);
+    }
+    setShowAddMemberModal(false);
+  };
+
+  const handleRemoveMember = (selectedUsers) => {
+    if (onAddMember && selectedUsers && selectedUsers.length > 0) {
+      // Gọi API xóa thành viên, bạn nên truyền hàm onRemoveMember từ cha xuống
+      const memberIds = selectedUsers.map(user => user.keycloakId);
+      if (typeof onRemoveMember === 'function') {
+        onRemoveMember(conversation.id, memberIds);
+      }
+    }
+    setShowRemoveMemberModal(false);
+  };
+  const handleDisbandGroup = async () => {
+  try {
+    await chatService.deleteGroupChat(conversation.id); // Gọi API giải tán nhóm
+    setShowDisbandModal(false);
+    toast.success("Nhóm đã được giải tán và toàn bộ tin nhắn đã bị xóa!");
+    // Có thể chuyển về trang danh sách chat hoặc reload lại
+    window.location.reload();
+  } catch (err) {
+    toast.error("Giải tán nhóm thất bại!");
+  }
+};
   // ---------- PHẦN HIỂN THỊ UI ----------
   return (
     <div className="flex items-center px-4 py-3 border-b border-gray-200 bg-white">
@@ -187,16 +253,20 @@ function ChatHeader({
           {image ? (
             <img src={image} alt={name} className="w-full h-full object-cover" />
           ) : (
-            <span className="text-gray-500 font-medium text-sm">
-              {name ? selectedUser.firstName.charAt(0).toUpperCase() + selectedUser.lastName.charAt(0).toUpperCase() : '?'}
-            </span>
+            isGroup
+              ? (typeof name === 'string' && name.length > 0 ? name.charAt(0).toUpperCase() : '?')
+              : (name && selectedUser
+                  ? (selectedUser.firstName?.charAt(0)?.toUpperCase() || '') + (selectedUser.lastName?.charAt(0)?.toUpperCase() || '')
+                  : '?')
           )}
         </div>
         
         {/* Chỉ báo trạng thái online/offline */}
         <span 
           className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${
-            isRecipientOnline ? 'bg-green-500' : 'bg-gray-400'
+            isGroup
+              ? (hasOnlineMember ? 'bg-green-500' : 'bg-gray-400')
+              : (isRecipientOnline ? 'bg-green-500' : 'bg-gray-400')
           }`}>
         </span>
       </div>
@@ -238,29 +308,48 @@ function ChatHeader({
             </svg>
           </button>
         )}
-        
-        {/* Menu options - luôn hiển thị */}
-        <CallButton 
-          recipientId={selectedUser.keycloakId} 
-          recipientName={name}
-        />
-
-        <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-            <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-          </svg>
-        </button>
+        {/* Nút thêm thành viên - chỉ hiển thị khi là nhóm */}
+        {isGroup && isGroupCreator && (
+        <>
+          <button
+            onClick={handleOpenAddMemberModal}
+            className="text-indigo-500 hover:text-indigo-600 focus:outline-none p-1 rounded-full hover:bg-indigo-50"
+            title="Thêm thành viên"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z" />
+            </svg>
+          </button>
+          <button
+            onClick={() => setShowRemoveMemberModal(true)}
+            className="text-red-500 hover:text-red-600 focus:outline-none p-1 rounded-full hover:bg-red-50"
+            title="Xóa thành viên khỏi nhóm"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 12H6" />
+            </svg>
+          </button>
+          <button
+            onClick={() => setShowDisbandModal(true)}
+            className="text-red-600 hover:text-red-700 focus:outline-none p-1 rounded-full hover:bg-red-50"
+            title="Giải tán nhóm"
+          >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                {/* Hai mũi tên tách ra và dấu X */}
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 17l-4-4m0 0l4-4m-4 4h18M17 7l4 4m0 0l-4 4" />
+                <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+          </button>
+        </>
+      )}
       </div>
       {/* Modal hiển thị Profile */}
-      {showProfileModal && selectedUser && (
+      {showProfileModal && (
         <>
-          {/* Overlay để làm mờ toàn bộ nội dung phía sau */}
           <div 
             className="fixed inset-0 backdrop-brightness-20 transition-opacity z-40"
             onClick={handleCloseProfileModal}
           ></div>
-          
-          {/* Modal container nổi lên trên lớp overlay */}
           <div className="fixed inset-0 z-50 overflow-y-auto">
             <div className="flex items-center justify-center min-h-screen p-4">
               <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl relative">
@@ -276,23 +365,106 @@ function ChatHeader({
                     </svg>
                   </button>
                 </div>
-                
                 <div className="max-h-[80vh] overflow-y-auto p-6"
                   style={{ '-ms-overflow-style': 'none', 'scrollbarWidth': 'none' }} 
                 >
-                  <Profile 
-                    user={userProfile} 
-                    showEditButton={false} 
-                    isFriend={false}
-                    onSendMessage={() => {
-                      handleCloseProfileModal();
-                    }}
+                  {viewingGroup ? (
+                    // Hiển thị thông tin nhóm
+                    <GroupProfile
+                      group={conversation}
+                      onSendFriendRequest={handleSendFriendRequestInfo}
+                    />
+                  ) : (
+                    // Hiển thị thông tin cá nhân như cũ
+                    <Profile 
+                      user={userProfile} 
+                      showEditButton={false} 
+                      isFriend={false}
+                      onSendMessage={handleCloseProfileModal}
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+      {/* Modal thêm thành viên */}
+      {showAddMemberModal && (
+        <>
+          <div 
+            className="fixed inset-0 backdrop-brightness-20 transition-opacity z-40"
+            onClick={() => setShowAddMemberModal(false)}
+          ></div>
+          
+          <div className="fixed inset-0 z-50 overflow-y-auto">
+            <div className="flex items-center justify-center min-h-screen p-4">
+              <div className="bg-white rounded-lg shadow-xl w-full max-w-md relative">
+                <div className="p-6">
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">Thêm thành viên vào nhóm</h3>
+                  
+                  <UserSearchModal 
+                    onSelectUsers={handleAddMember}
+                    onCancel={() => setShowAddMemberModal(false)}
+                    title="Chọn người dùng để thêm vào nhóm"
+                    excludeIds={conversation.participants} // Loại trừ các thành viên đã có trong nhóm
+                    multiSelect={true}
+                    actionType="add"
                   />
                 </div>
               </div>
             </div>
           </div>
         </>
+      )}
+      {showRemoveMemberModal && (
+        <>
+          <div
+            className="fixed inset-0 backdrop-brightness-20 transition-opacity z-40"
+            onClick={() => setShowRemoveMemberModal(false)}
+          ></div>
+          <div className="fixed inset-0 z-50 overflow-y-auto">
+            <div className="flex items-center justify-center min-h-screen p-4">
+              <div className="bg-white rounded-lg shadow-xl w-full max-w-md relative">
+                <div className="p-6">
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">Chọn thành viên để xóa khỏi nhóm</h3>
+                  <UserSearchModal
+                    onSelectUsers={handleRemoveMember}
+                    onCancel={() => setShowRemoveMemberModal(false)}
+                    title="Chọn thành viên để xóa"
+                    // Chỉ cho chọn các thành viên hiện tại, loại bỏ bản thân
+                    includeIds={conversation.participants}
+                    excludeIds={[user.keycloakId]} // Loại trừ bản thân
+                    multiSelect={true}
+                    actionType="remove"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+      {showDisbandModal && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center backdrop-brightness-20 transition-opacity">
+          <div className="bg-white rounded-lg shadow-lg p-6 max-w-sm w-full">
+            <h3 className="text-lg font-semibold mb-4 text-red-600">Bạn chắc chắn muốn giải tán nhóm?</h3>
+            <p className="mb-4 text-gray-600">Tất cả thành viên sẽ bị xóa khỏi nhóm và mọi tin nhắn sẽ bị mất vĩnh viễn.</p>
+            <div className="flex justify-end space-x-2">
+              <button
+                onClick={() => setShowDisbandModal(false)}
+                className="px-4 py-2 rounded bg-gray-100 hover:bg-gray-200 text-gray-700"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleDisbandGroup}
+                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+              >
+                Giải tán
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

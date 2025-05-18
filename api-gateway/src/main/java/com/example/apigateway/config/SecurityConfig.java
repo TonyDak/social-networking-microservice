@@ -47,7 +47,7 @@ public class SecurityConfig {
                 .authorizeExchange(exchanges -> exchanges
                         .pathMatchers("/api/auth/register", "/api/auth/login",
                                 "/api/auth/forgot-password", "/api/auth/google-login-url",
-                                "/api/auth/google-redirect", "/api/auth/refresh**", "/api/auth/logout-user**","/ws/**","/ws/info**", "ws").permitAll()
+                                "/api/auth/google-redirect", "/api/auth/refresh**", "/api/auth/logout-user**","/ws/**","/ws/info**", "ws","/api/ai-chatbot/**").permitAll()
                         .anyExchange().authenticated()
                 )
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))

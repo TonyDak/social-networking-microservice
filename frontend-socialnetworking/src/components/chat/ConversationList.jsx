@@ -64,11 +64,12 @@ function ConversationList({
                 })
             );
             
-            return {
-                isGroup: true,
-                groupName: conversation.name || 'Nhóm không tên',
-                participants: participantsInfo
-            };
+           return {
+              isGroup: true,
+              groupName: conversation.name || 'Nhóm không tên',
+              groupAvatar: (conversation.name || 'N')[0].toUpperCase(),
+              participants: participantsInfo
+          };
         } catch (error) {
             console.error("Error fetching group participants:", error);
             return { groupName: 'Nhóm không xác định' };
@@ -115,7 +116,7 @@ function ConversationList({
             nameMatches = conv.users.groupName.toLowerCase().includes(term);
           } 
           
-          if (!nameMatches && conv.users.participants) {
+          if (!nameMatches && Array.isArray(conv.users.participants)) {
             nameMatches = conv.users.participants.some(p => 
               (p.body?.firstName + ' ' + p.body?.lastName).toLowerCase().includes(term)
             );
@@ -215,8 +216,16 @@ function ConversationList({
                       </span>
                     ) : (
                       <span className="text-lg font-medium text-indigo-600">
-                        {(conversation.users?.body?.firstName?.charAt(0) || "") + 
-                         (conversation.users?.body?.lastName?.charAt(0) || "U")}
+                        {conversation.users?.body?.image ? (
+                          <img
+                            src={conversation.users.body.image}
+                            alt="avatar"
+                            className="w-12 h-12 rounded-full object-cover"
+                          />
+                        ) : (
+                          (conversation.users?.body?.firstName?.charAt(0) || "") +
+                          (conversation.users?.body?.lastName?.charAt(0) || "U")
+                        )}
                       </span>
                     )}
                   </div>
@@ -234,8 +243,20 @@ function ConversationList({
                       </span>
                     </div>
                     <p className="text-sm text-gray-600 truncate">
-                      {conversation.lastMessageContent || "Chưa có tin nhắn"}
-                    </p>
+                    {/\.(jpg|jpeg|png|gif|webp)$/i.test(conversation.lastMessageContent)
+                      ? "[Hình ảnh]"
+                      : /\.(mp4|mov|avi|wmv|webm)$/i.test(conversation.lastMessageContent)
+                      ? "[Video]"
+                      : /\.(pdf)$/i.test(conversation.lastMessageContent)
+                      ? "[PDF]"
+                      : /\.(doc|docx)$/i.test(conversation.lastMessageContent)
+                      ? "[Word]"
+                      : /\.(xls|xlsx)$/i.test(conversation.lastMessageContent)
+                      ? "[Excel]"
+                      : /\.(zip|rar|7z)$/i.test(conversation.lastMessageContent)
+                      ? "[Tệp nén]"
+                      : conversation.lastMessageContent}
+                  </p>
                   </div>
                   {conversation.unreadCount > 0 && (
                     <div className="relative ml-2">

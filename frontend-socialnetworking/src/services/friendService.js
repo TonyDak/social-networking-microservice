@@ -162,19 +162,6 @@ export const searchUsers = async (query) => {
   }
 };
 
-export const checkMultipleFriendshipStatus = async (userId, otherUserIds) => {
-    try {
-      const response = await friendClient.post(`/status/batch`, {
-        userId,
-        otherUserIds
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error checking multiple friendship statuses:', error);
-      throw error;
-    }
-  };
-
 export const checkFriendship = async (userId, targetId) => {
   try {
     const response = await friendClient.get(`/areFriends/${targetId}`, {

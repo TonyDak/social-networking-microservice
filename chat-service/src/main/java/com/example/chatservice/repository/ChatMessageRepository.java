@@ -13,4 +13,9 @@ public interface ChatMessageRepository extends MongoRepository<ChatMessage, Stri
     List<ChatMessage> findByReceiverIdAndStatus(String receiverId, String status);
     List<ChatMessage> findByConversationIdAndSenderIdAndReceiverIdAndStatus(String conversationId, String senderId, String receiverId, String status);
     List<ChatMessage> findByConversationIdInOrderByTimestampDesc(List<String> conversationIds, Pageable pageable);
+    List<ChatMessage> findByConversationIdOrderByTimestampDesc(String conversationId, Pageable pageable);
+
+    //deleteByConversationId
+    void deleteByConversationId(String conversationId);
+
 }

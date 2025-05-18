@@ -70,6 +70,13 @@ spring:
               - Path=/api/friends/**
           filters:
               - RewritePath=/api/friends/(?<segment>.*), /$\{segment}
+
+        - id: ai-chatbot-service
+          uri: lb://AI-CHATBOT-SERVICE
+          predicates:
+            - Path=/api/ai-chatbot/**
+          filters:
+            - RewritePath=/api/ai-chatbot/(?<segment>.*), /$\{segment}
 eureka:
   client:
     serviceUrl:

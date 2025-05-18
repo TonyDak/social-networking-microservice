@@ -7,6 +7,7 @@ function GroupsList({
   onOpenChat, 
   onLeaveGroup 
 }) {
+  console.log('GroupsList rendered with groups:', groups);
   // Lọc nhóm theo từ khóa tìm kiếm
   const filteredGroups = useMemo(() => {
     if (!searchTerm) return groups;
@@ -56,7 +57,7 @@ function GroupsList({
                   <div className="flex-1">
                     <h3 className="font-medium">{group.name}</h3>
                     <p className="text-sm text-gray-500">
-                      {group.memberCount || 0} thành viên
+                      {group.participants?.length} thành viên
                     </p>
                   </div>
                 </div>

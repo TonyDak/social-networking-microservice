@@ -24,6 +24,7 @@ public class ChatMessage {
     private LocalDateTime timestamp;
     private String status;
     private String type; // text, image, video, etc.
+    private String fileName;
 
     @PrePersist
     public void onCreate() {
